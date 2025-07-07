@@ -1,0 +1,379 @@
+import emailjs from '@emailjs/browser';
+
+// EmailJS configuration
+const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'your_service_id';
+const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || 'your_template_id';
+const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'your_public_key';
+
+// Initialize EmailJS
+emailjs.init(EMAILJS_PUBLIC_KEY);
+
+export interface EmailData {
+  to_email: string;
+  to_name: string;
+  subject: string;
+  message: string;
+  from_name?: string;
+  reply_to?: string;
+}
+
+export class EmailService {
+  // Check if EmailJS is properly configured
+  static isConfigured(): boolean {
+    const isConfigured = EMAILJS_SERVICE_ID !== 'your_service_id' &&
+                        EMAILJS_TEMPLATE_ID !== 'your_template_id' &&
+                        EMAILJS_PUBLIC_KEY !== 'your_public_key' &&
+                        EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID && EMAILJS_PUBLIC_KEY;
+
+    if (!isConfigured) {
+      console.warn('⚠️ EmailJS not configured. Please set up VITE_EMAILJS_* environment variables.');
+    }
+
+    return isConfigured;
+  }
+
+  // Send approval email to partner/driver
+  static async sendApprovalEmail(
+    email: string,
+    name: string,
+    type: 'restaurant_owner' | 'delivery_rider',
+    loginCredentials?: { email: string; password: string }
+  ): Promise<boolean> {
+    try {
+      if (!this.isConfigured()) {
+        console.log('📧 EmailJS not configured, logging email content instead:');
+        const roleDisplayName = type === 'restaurant_owner' ? 'Restaurant Partner' : 'Delivery Driver';
+        const dashboardUrl = type === 'restaurant_owner'
+          ? `${window.location.origin}/restaurant`
+          : `${window.location.origin}/delivery`;
+
+        console.log('📧 APPROVAL EMAIL CONTENT:');
+        console.log('To:', email);
+        console.log('Subject:', `🎉 Your ${roleDisplayName} Application Has Been Approved!`);
+        console.log('Message:', this.generateApprovalEmailContent(name, roleDisplayName, dashboardUrl, loginCredentials));
+        return true;
+      }
+
+      const roleDisplayName = type === 'restaurant_owner' ? 'Restaurant Partner' : 'Delivery Driver';
+      const dashboardUrl = type === 'restaurant_owner'
+        ? `${window.location.origin}/restaurant`
+        : `${window.location.origin}/delivery`;
+
+      const emailData: EmailData = {
+        to_email: email,
+        to_name: name,
+        subject: `🎉 Your ${roleDisplayName} Application Has Been Approved!`,
+        message: this.generateApprovalEmailContent(name, roleDisplayName, dashboardUrl, loginCredentials),
+        from_name: 'Grubz Team',
+        reply_to: 'support@grubz.com'
+      };
+
+      console.log('📧 Sending approval email to:', email);
+      console.log('📧 Email data:', emailData);
+
+      const response = await emailjs.send(
+        EMAILJS_SERVICE_ID,
+        EMAILJS_TEMPLATE_ID,
+        emailData
+      );
+
+      console.log('✅ Email sent successfully:', response);
+      return true;
+    } catch (error) {
+      console.error('❌ Error sending approval email:', error);
+      console.error('❌ Error details:', {
+        serviceId: EMAILJS_SERVICE_ID,
+        templateId: EMAILJS_TEMPLATE_ID,
+        publicKey: EMAILJS_PUBLIC_KEY,
+        error: error
+      });
+      return false;
+    }
+  }
+
+  // Send rejection email to partner/driver
+  static async sendRejectionEmail(
+    email: string,
+    name: string,
+    type: 'restaurant_owner' | 'delivery_rider',
+    reason?: string
+  ): Promise<boolean> {
+    try {
+      const roleDisplayName = type === 'restaurant_owner' ? 'Restaurant Partner' : 'Delivery Driver';
+
+      const emailData: EmailData = {
+        to_email: email,
+        to_name: name,
+        subject: `Update on Your ${roleDisplayName} Application`,
+        message: this.generateRejectionEmailContent(name, roleDisplayName, reason),
+        from_name: 'Grubz Team',
+        reply_to: 'support@grubz.com'
+      };
+
+      console.log('📧 Sending rejection email to:', email);
+      
+      const response = await emailjs.send(
+        EMAILJS_SERVICE_ID,
+        EMAILJS_TEMPLATE_ID,
+        emailData
+      );
+
+      console.log('✅ Email sent successfully:', response);
+      return true;
+    } catch (error) {
+      console.error('❌ Error sending rejection email:', error);
+      return false;
+    }
+  }
+
+  // Generate approval email content with HTML styling
+  private static generateApprovalEmailContent(
+    name: string,
+    roleDisplayName: string,
+    dashboardUrl: string,
+    loginCredentials?: { email: string; password: string }
+  ): string {
+    const isRestaurant = roleDisplayName === 'Restaurant Partner';
+    const primaryColor = '#dc2626'; // Red theme for Grubz
+    const secondaryColor = '#f3f4f6';
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to Grubz!</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f8f9fa; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, ${primaryColor} 0%, #b91c1c 100%); color: white; padding: 30px 20px; text-align: center; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
+        .header p { margin: 10px 0 0 0; font-size: 16px; opacity: 0.9; }
+        .content { padding: 30px 20px; }
+        .welcome-badge { background-color: #10b981; color: white; padding: 8px 16px; border-radius: 20px; display: inline-block; font-weight: bold; margin-bottom: 20px; }
+        .credentials-box { background-color: ${secondaryColor}; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        .credentials-box h3 { margin: 0 0 15px 0; color: ${primaryColor}; }
+        .credential-item { margin: 8px 0; font-family: monospace; background: white; padding: 8px; border-radius: 4px; }
+        .steps-list { background-color: #fef3c7; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .steps-list h3 { margin: 0 0 15px 0; color: #92400e; }
+        .steps-list ol { margin: 0; padding-left: 20px; }
+        .steps-list li { margin: 8px 0; color: #78350f; }
+        .cta-button { display: inline-block; background-color: ${primaryColor}; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
+        .cta-button:hover { background-color: #b91c1c; }
+        .support-box { background-color: #eff6ff; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; }
+        .footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+        .emoji { font-size: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><span class="emoji">🍕</span> Welcome to Grubz!</h1>
+            <p>Your ${roleDisplayName} application has been approved</p>
+        </div>
+
+        <div class="content">
+            <div class="welcome-badge">
+                <span class="emoji">🎉</span> APPROVED!
+            </div>
+
+            <h2>Dear ${name},</h2>
+
+            <p>Congratulations! We're thrilled to welcome you to the Grubz family as our newest ${roleDisplayName}.</p>
+
+            <p>You can now start ${isRestaurant ? 'managing your restaurant and receiving orders' : 'accepting delivery requests and earning money'} through our platform.</p>
+
+            ${loginCredentials ? `
+            <div class="credentials-box">
+                <h3><span class="emoji">🔐</span> Your Login Credentials</h3>
+                <div class="credential-item"><strong>Email:</strong> ${loginCredentials.email}</div>
+                <div class="credential-item"><strong>Password:</strong> ${loginCredentials.password}</div>
+                <p style="margin-top: 15px; font-size: 14px; color: #6b7280;">
+                    <strong>Security Note:</strong> Please change your password after your first login for security.
+                </p>
+            </div>
+            ` : ''}
+
+            <div class="steps-list">
+                <h3><span class="emoji">🚀</span> Next Steps</h3>
+                <ol>
+                    <li>Access your dashboard using the button below</li>
+                    <li>Complete your profile setup</li>
+                    <li>${isRestaurant ? 'Add your menu items and restaurant details' : 'Set your availability and delivery preferences'}</li>
+                    <li>Start ${isRestaurant ? 'receiving orders' : 'accepting delivery requests'}!</li>
+                </ol>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="${dashboardUrl}" class="cta-button">
+                    <span class="emoji">${isRestaurant ? '🏪' : '🚗'}</span> Access Your Dashboard
+                </a>
+            </div>
+
+            <div class="support-box">
+                <h3><span class="emoji">📞</span> Need Help?</h3>
+                <p>Our support team is here to help you get started!</p>
+                <p><strong>Email:</strong> support@grubz.com</p>
+                <p><strong>Phone:</strong> 1-800-GRUBZ-HELP</p>
+            </div>
+
+            <p>We're excited to see you succeed on our platform!</p>
+
+            <p>Best regards,<br>
+            <strong>The Grubz Team</strong></p>
+        </div>
+
+        <div class="footer">
+            <p>© 2024 Grubz. All rights reserved.</p>
+            <p>This is an automated message. Please do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>
+    `.trim();
+  }
+
+  // Generate rejection email content with HTML styling
+  private static generateRejectionEmailContent(
+    name: string,
+    roleDisplayName: string,
+    reason?: string
+  ): string {
+    const primaryColor = '#dc2626'; // Red theme for Grubz
+    const warningColor = '#f59e0b';
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Application Update - Grubz</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f8f9fa; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, ${warningColor} 0%, #d97706 100%); color: white; padding: 30px 20px; text-align: center; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
+        .header p { margin: 10px 0 0 0; font-size: 16px; opacity: 0.9; }
+        .content { padding: 30px 20px; }
+        .status-badge { background-color: #fbbf24; color: #92400e; padding: 8px 16px; border-radius: 20px; display: inline-block; font-weight: bold; margin-bottom: 20px; }
+        .reason-box { background-color: #fef3c7; border-left: 4px solid ${warningColor}; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        .reason-box h3 { margin: 0 0 15px 0; color: #92400e; }
+        .encouragement-box { background-color: #ecfdf5; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .encouragement-box h3 { margin: 0 0 15px 0; color: #065f46; }
+        .support-box { background-color: #eff6ff; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; }
+        .footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+        .emoji { font-size: 20px; }
+        .cta-button { display: inline-block; background-color: ${primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><span class="emoji">📋</span> Application Update</h1>
+            <p>Regarding your ${roleDisplayName} application</p>
+        </div>
+
+        <div class="content">
+            <div class="status-badge">
+                <span class="emoji">⏳</span> Under Review
+            </div>
+
+            <h2>Dear ${name},</h2>
+
+            <p>Thank you for your interest in becoming a ${roleDisplayName} with Grubz. We appreciate the time you took to submit your application.</p>
+
+            <p>After careful review of your application, we regret to inform you that we are unable to approve your application at this time.</p>
+
+            ${reason ? `
+            <div class="reason-box">
+                <h3><span class="emoji">📝</span> Feedback</h3>
+                <p>${reason}</p>
+            </div>
+            ` : ''}
+
+            <div class="encouragement-box">
+                <h3><span class="emoji">🌟</span> Don't Give Up!</h3>
+                <p>We encourage you to reapply in the future if your circumstances change or if you'd like to address any concerns mentioned above.</p>
+                <p>Many successful partners joined us after improving their initial applications.</p>
+            </div>
+
+            <div class="support-box">
+                <h3><span class="emoji">💬</span> Questions?</h3>
+                <p>If you have any questions about this decision or need guidance for future applications, our support team is here to help.</p>
+                <p><strong>Email:</strong> support@grubz.com</p>
+                <p><strong>Phone:</strong> 1-800-GRUBZ-HELP</p>
+                <div style="margin-top: 15px;">
+                    <a href="mailto:support@grubz.com?subject=Application Feedback Request" class="cta-button">
+                        <span class="emoji">📧</span> Contact Support
+                    </a>
+                </div>
+            </div>
+
+            <p>Thank you again for your interest in Grubz. We wish you all the best in your future endeavors.</p>
+
+            <p>Best regards,<br>
+            <strong>The Grubz Team</strong></p>
+        </div>
+
+        <div class="footer">
+            <p>© 2024 Grubz. All rights reserved.</p>
+            <p>This is an automated message. Please do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>
+    `.trim();
+  }
+
+  // Test email functionality
+  static async sendTestEmail(email: string): Promise<boolean> {
+    try {
+      if (!this.isConfigured()) {
+        console.log('📧 EmailJS not configured, logging test email content instead:');
+        console.log('📧 TEST EMAIL CONTENT:');
+        console.log('To:', email);
+        console.log('Subject: Grubz Email Service Test');
+        console.log('Message: This is a test email to verify that the email service is working correctly.');
+        return true;
+      }
+
+      const emailData: EmailData = {
+        to_email: email,
+        to_name: 'Test User',
+        subject: 'Grubz Email Service Test',
+        message: 'This is a test email to verify that the email service is working correctly.',
+        from_name: 'Grubz Team',
+        reply_to: 'support@grubz.com'
+      };
+
+      console.log('📧 Sending test email to:', email);
+      console.log('📧 EmailJS Config:', {
+        serviceId: EMAILJS_SERVICE_ID,
+        templateId: EMAILJS_TEMPLATE_ID,
+        publicKey: EMAILJS_PUBLIC_KEY ? 'Set' : 'Not set'
+      });
+      console.log('📧 Email data being sent:', emailData);
+
+      const response = await emailjs.send(
+        EMAILJS_SERVICE_ID,
+        EMAILJS_TEMPLATE_ID,
+        emailData
+      );
+
+      console.log('✅ Test email sent successfully:', response);
+      console.log('📧 Response details:', {
+        status: response.status,
+        text: response.text,
+        serviceId: EMAILJS_SERVICE_ID,
+        templateId: EMAILJS_TEMPLATE_ID
+      });
+      return true;
+    } catch (error) {
+      console.error('❌ Error sending test email:', error);
+      console.error('❌ EmailJS Error details:', error);
+      return false;
+    }
+  }
+}

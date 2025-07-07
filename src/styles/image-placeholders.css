@@ -1,0 +1,112 @@
+/* Image placeholder styles for food delivery landing page */
+
+.hero-background {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 50%, #ff9ff3 100%);
+  position: relative;
+}
+
+.hero-background::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.1'%3E%3Ccircle cx='30' cy='30' r='4'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") repeat;
+}
+
+.process-icon-choose {
+  background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 10px;
+}
+
+.process-icon-prepare {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 10px;
+}
+
+.process-icon-deliver {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 10px;
+}
+
+.testimonial-image-1 {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 48px;
+}
+
+.testimonial-image-2 {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 48px;
+}
+
+.testimonial-image-3 {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 48px;
+}
+
+.food-item-placeholder {
+  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 50%, #fecfef 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 24px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+/* Additional food item styles */
+.food-item-pizza {
+  background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+}
+
+.food-item-burger {
+  background: linear-gradient(135deg, #ffd89b 0%, #19547b 100%);
+}
+
+.food-item-salad {
+  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+}
+
+.food-item-sushi {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.food-item-pasta {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.food-item-dessert {
+  background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+}
