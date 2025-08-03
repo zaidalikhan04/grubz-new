@@ -7,7 +7,7 @@ import "../../../../styles/image-placeholders.css";
 
 export const BalancedDietSection = (): JSX.Element => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
 
   const getRedirectPath = (role: string): string => {
     switch (role) {
@@ -25,8 +25,8 @@ export const BalancedDietSection = (): JSX.Element => {
   };
 
   const handleOrderNow = () => {
-    if (user) {
-      navigate(getRedirectPath(user.role));
+    if (currentUser) {
+      navigate(getRedirectPath(currentUser.role));
     } else {
       navigate('/auth?mode=signup');
     }
@@ -47,17 +47,11 @@ export const BalancedDietSection = (): JSX.Element => {
               </p>
 
               <div className="flex gap-4 mt-12">
-                <Button 
+                <Button
                   onClick={handleOrderNow}
                   className="h-12 px-5 rounded-3xl bg-[#dd3333] hover:bg-[#c52e2e] text-[#f9f7f7] font-['Plus_Jakarta_Sans',Helvetica] font-bold"
                 >
-                  {user ? 'Order Now' : 'Get Started'}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-12 px-5 rounded-3xl bg-[#f2e8e8] hover:bg-[#e6dada] text-[#190c0c] font-['Plus_Jakarta_Sans',Helvetica] font-bold border-0"
-                >
-                  View Process
+                  {currentUser ? 'Order Now' : 'Get Started'}
                 </Button>
               </div>
             </div>

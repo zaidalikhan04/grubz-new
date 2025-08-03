@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { DriverLayout } from '../components/driver/DriverLayout';
 import { DriverDashboardOverview } from '../components/driver/DriverDashboardOverview';
-import { DriverActiveDeliveries } from '../components/driver/DriverActiveDeliveries';
+import { DriverOrders } from '../components/driver/DriverOrders';
 import { DriverEarnings } from '../components/driver/DriverEarnings';
 import { DriverHistory } from '../components/driver/DriverHistory';
 import { DriverProfile } from '../components/driver/DriverProfile';
 import { DriverSettings } from '../components/driver/DriverSettings';
+import { MyDeliveryInfo } from '../components/delivery/MyDeliveryInfo';
+import { ProfileSection } from '../components/profile/ProfileSection';
+
 
 export const DeliveryDashboard: React.FC = () => {
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -15,13 +18,14 @@ export const DeliveryDashboard: React.FC = () => {
       case 'dashboard':
         return <DriverDashboardOverview />;
       case 'deliveries':
-        return <DriverActiveDeliveries />;
+        return <DriverOrders />;
       case 'earnings':
         return <DriverEarnings />;
       case 'history':
         return <DriverHistory />;
+
       case 'profile':
-        return <DriverProfile />;
+        return <ProfileSection />;
       case 'settings':
         return <DriverSettings />;
       default:

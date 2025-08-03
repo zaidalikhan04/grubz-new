@@ -156,12 +156,12 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     }
   };
 
-  // Request notification permission on mount
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
+  // Request notification permission on mount - DISABLED to prevent unwanted popups
+  // useEffect(() => {
+  //   if ('Notification' in window && Notification.permission === 'default') {
+  //     Notification.requestPermission();
+  //   }
+  // }, []);
 
   // Simulate new notifications for demo purposes
   useEffect(() => {

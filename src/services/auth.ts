@@ -5,148 +5,184 @@ import {
   onAuthStateChanged,
   updateProfile,
   sendPasswordResetEmail,
-  User,
-  UserCredential
+  sendEmailVerification,
+  signInWithPopup,
+  GoogleAuthProvider,
+  User as FirebaseUser
 } from 'firebase/auth';
-import { auth } from '../config/firebase';
-import { UserService } from './database';
+import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../config/firebase';
+
+export type UserRole = 'admin' | 'customer' | 'restaurant_owner' | 'delivery_rider';
 
 export interface UserData {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'customer' | 'restaurant_owner' | 'delivery_rider';
+  role: UserRole;
   phone?: string;
   address?: string;
-  createdAt?: any;
-  updatedAt?: any;
+  photoURL?: string;
+  profilePictureUrl?: string;
+  emailVerified: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  restaurantId?: string;
+  isActive: boolean;
 }
 
 export class AuthService {
-  // Register a new user (auto-login after registration)
   static async register(email: string, password: string, userData: Partial<UserData>): Promise<UserData> {
     try {
-      // Create user in Firebase Auth
-      const userCredential: UserCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Update the user's display name
       if (userData.name) {
         await updateProfile(user, { displayName: userData.name });
       }
 
-      // Create user document in Firestore
-      const newUserData: UserData = {
-        id: user.uid,
-        email: user.email!,
-        name: userData.name || '',
-        role: userData.role || 'customer',
-        phone: userData.phone || '',
-        address: userData.address || '',
-      };
+      // Determine role - allow admin if explicitly specified, otherwise default to customer
+      const userRole = userData.role === 'admin' ? 'admin' : 'customer';
 
-      await UserService.createUser(newUserData);
-      return newUserData;
-    } catch (error) {
-      console.error('Error registering user:', error);
-      throw error;
-    }
-  }
-
-  // Register a new user without auto-login (for customer signup)
-  static async registerWithoutLogin(email: string, password: string, userData: Partial<UserData>): Promise<UserData> {
-    try {
-      console.log('🔄 Starting registerWithoutLogin for:', email);
-
-      // Create user in Firebase Auth
-      console.log('🔄 Creating Firebase Auth user...');
-      const userCredential: UserCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-      console.log('✅ Firebase Auth user created:', user.uid);
-
-      // Update the user's display name
-      if (userData.name) {
-        console.log('🔄 Updating display name...');
-        await updateProfile(user, { displayName: userData.name });
-        console.log('✅ Display name updated');
+      // Send email verification immediately after registration (skip for admin users)
+      if (userRole !== 'admin') {
+        await sendEmailVerification(user);
+        console.log('📧 Email verification sent to:', user.email);
+      } else {
+        console.log('🔑 Admin user created - email verification skipped');
       }
 
-      // Create user document in Firestore
       const newUserData: UserData = {
         id: user.uid,
         email: user.email!,
         name: userData.name || '',
-        role: userData.role || 'customer',
         phone: userData.phone || '',
         address: userData.address || '',
+        photoURL: user.photoURL || '',
+        emailVerified: user.emailVerified,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isActive: true,
+        ...userData,
+        role: userRole // Ensure role is set correctly (override any role from userData)
       };
 
-      console.log('🔄 Creating Firestore user document:', newUserData);
-      await UserService.createUser(newUserData);
-      console.log('✅ Firestore user document created');
-
-      // Sign out the user immediately after registration
-      console.log('🔄 Signing out user after registration...');
-      await signOut(auth);
-      console.log('✅ User signed out successfully');
-
+      await setDoc(doc(db, 'users', user.uid), newUserData);
+      console.log('✅ User registered successfully with default role: customer');
       return newUserData;
     } catch (error) {
-      console.error('❌ Error in registerWithoutLogin:', error);
+      console.error('❌ Registration error:', error);
       throw error;
     }
   }
 
-  // Sign in user
   static async login(email: string, password: string): Promise<UserData> {
     try {
-      const userCredential: UserCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Get user data from Firestore
-      const userData = await UserService.getUserById(user.uid);
+      const userData = await this.getUserData(user.uid);
       if (!userData) {
         throw new Error('User data not found');
       }
 
-      return userData as UserData;
+      // Check if email is verified (skip verification for admin users)
+      if (!user.emailVerified && userData.role !== 'admin') {
+        // Sign out the user since they can't access the app
+        await signOut(auth);
+        throw new Error('Please verify your email before logging in. Check your inbox for a verification link.');
+      }
+
+      // Update emailVerified status in Firestore if it's different
+      if (userData.emailVerified !== user.emailVerified) {
+        await this.updateUserProfile({ emailVerified: user.emailVerified });
+        userData.emailVerified = user.emailVerified;
+      }
+
+      console.log('✅ User logged in successfully:', userData.email, 'Role:', userData.role);
+      if (userData.role === 'admin') {
+        console.log('🔑 Admin user - email verification bypassed');
+      }
+      return userData;
     } catch (error) {
-      console.error('Error signing in:', error);
+      console.error('❌ Login error:', error);
       throw error;
     }
   }
 
-  // Sign out user
+  static async loginWithGoogle(): Promise<UserData> {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.addScope('email');
+      provider.addScope('profile');
+
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      // Check if user already exists in Firestore
+      let userData = await this.getUserData(user.uid);
+
+      if (!userData) {
+        // Create new user document for Google sign-in
+        const newUserData: UserData = {
+          id: user.uid,
+          email: user.email!,
+          name: user.displayName || '',
+          role: 'customer', // Default role for Google sign-in
+          phone: '',
+          address: '',
+          photoURL: user.photoURL || '',
+          emailVerified: user.emailVerified,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          isActive: true
+        };
+
+        await setDoc(doc(db, 'users', user.uid), newUserData);
+        userData = newUserData;
+        console.log('✅ New Google user created successfully');
+      } else {
+        // Update existing user's photo URL if it's different
+        if (userData.photoURL !== user.photoURL) {
+          await this.updateUserProfile({ photoURL: user.photoURL || '' });
+          userData.photoURL = user.photoURL || '';
+        }
+        console.log('✅ Existing Google user logged in successfully');
+      }
+
+      return userData;
+    } catch (error) {
+      console.error('❌ Google login error:', error);
+      throw error;
+    }
+  }
+
   static async logout(): Promise<void> {
     try {
       await signOut(auth);
     } catch (error) {
-      console.error('Error signing out:', error);
       throw error;
     }
   }
 
-  // Get current user
-  static getCurrentUser(): User | null {
-    return auth.currentUser;
-  }
-
-  // Listen to authentication state changes
-  static onAuthStateChange(callback: (user: User | null) => void) {
-    return onAuthStateChanged(auth, callback);
-  }
-
-  // Send password reset email
-  static async resetPassword(email: string): Promise<void> {
+  static async getUserData(uid: string): Promise<UserData | null> {
     try {
-      await sendPasswordResetEmail(auth, email);
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        return {
+          id: userDoc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date()
+        } as UserData;
+      }
+      return null;
     } catch (error) {
-      console.error('Error sending password reset email:', error);
       throw error;
     }
   }
 
-  // Update user profile
   static async updateUserProfile(userData: Partial<UserData>): Promise<void> {
     try {
       const user = auth.currentUser;
@@ -154,108 +190,80 @@ export class AuthService {
         throw new Error('No user is currently signed in');
       }
 
-      // Update Firebase Auth profile
+      const updates: Partial<UserData> = {
+        ...userData,
+        updatedAt: new Date()
+      };
+
       if (userData.name) {
         await updateProfile(user, { displayName: userData.name });
       }
 
-      // Update Firestore user document
-      await UserService.updateUser(user.uid, userData);
+      await setDoc(doc(db, 'users', user.uid), updates, { merge: true });
     } catch (error) {
-      console.error('Error updating user profile:', error);
       throw error;
     }
   }
 
-  // Get user data from Firestore
-  static async getUserData(uid: string): Promise<UserData | null> {
+  static async resendEmailVerification(email: string, password: string): Promise<boolean> {
     try {
-      console.log('🔄 Getting user data for UID:', uid);
-      const userData = await UserService.getUserById(uid) as UserData;
-      console.log('🔄 User data result:', userData);
-      return userData;
+      // Sign in the user temporarily to get access to their account
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      if (user.emailVerified) {
+        throw new Error('Email is already verified');
+      }
+
+      // Send email verification
+      await sendEmailVerification(user);
+      console.log('📧 Email verification resent to:', user.email);
+
+      // Sign out after sending verification
+      await signOut(auth);
+
+      return true;
     } catch (error) {
-      console.error('❌ Error getting user data:', error);
-      return null;
+      console.error('❌ Error resending email verification:', error);
+      throw error;
     }
   }
 
-  // Check if user has specific role
-  static async hasRole(uid: string, role: string): Promise<boolean> {
+  static async sendPasswordResetEmail(email: string): Promise<void> {
     try {
-      const userData = await this.getUserData(uid);
-      return userData?.role === role;
+      await sendPasswordResetEmail(auth, email);
+      console.log('📧 Password reset email sent to:', email);
     } catch (error) {
-      console.error('Error checking user role:', error);
-      return false;
+      console.error('❌ Error sending password reset email:', error);
+      throw error;
     }
   }
 
-  // Create default admin user (for initial setup)
-  static async createDefaultAdmin(): Promise<void> {
+  static async updateProfilePicture(userId: string, profilePictureUrl: string): Promise<void> {
     try {
-      const adminEmail = 'admin@grubz.com';
-      const adminPassword = 'password123';
-
-      // Check if admin already exists
-      const existingAdmin = await UserService.getUserByEmail(adminEmail);
-      if (existingAdmin) {
-        console.log('Default admin already exists');
-      } else {
-        // Create admin user
-        await this.register(adminEmail, adminPassword, {
-          name: 'System Administrator',
-          role: 'admin',
-          phone: '+1 (555) 123-4567'
-        });
-        console.log('Default admin user created successfully');
-      }
-
-      // Also create a default customer for testing
-      const customerEmail = 'customer@grubz.com';
-      const existingCustomer = await UserService.getUserByEmail(customerEmail);
-      if (!existingCustomer) {
-        await this.register(customerEmail, adminPassword, {
-          name: 'Test Customer',
-          role: 'customer',
-          phone: '+1 (555) 123-4567'
-        });
-        console.log('Default customer user created successfully');
-      } else {
-        console.log('Default customer already exists');
-      }
-    } catch (error) {
-      console.error('Error creating default users:', error);
-    }
-  }
-
-  // Create a test customer account for debugging
-  static async createTestCustomer(): Promise<void> {
-    try {
-      const testEmail = 'test@customer.com';
-      const testPassword = 'password123';
-
-      console.log('🔄 Checking if test customer exists...');
-
-      // Check if test customer already exists
-      const existingCustomer = await UserService.getUserByEmail(testEmail);
-      if (existingCustomer) {
-        console.log('✅ Test customer already exists:', existingCustomer);
-        return;
-      }
-
-      console.log('🔄 Creating test customer account...');
-
-      // Create test customer user
-      const userData = await this.register(testEmail, testPassword, {
-        name: 'Test Customer',
-        role: 'customer',
-        phone: '+1 (555) 123-4567'
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        profilePictureUrl,
+        updatedAt: new Date()
       });
-
-      console.log('✅ Test customer user created successfully:', userData);
+      console.log('✅ Profile picture updated successfully');
     } catch (error) {
-      console.error('❌ Error creating test customer:', error);
+      console.error('❌ Error updating profile picture:', error);
+      throw new Error('Failed to update profile picture');
+    }
+  }
+
+  static async updateProfile(userId: string, userData: Partial<UserData>): Promise<void> {
+    try {
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        ...userData,
+        updatedAt: new Date()
+      });
+      console.log('✅ User profile updated successfully');
+    } catch (error) {
+      console.error('❌ Error updating user profile:', error);
+      throw new Error('Failed to update profile');
     }
   }
 }

@@ -2,16 +2,15 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { useAuth } from '../../contexts/AuthContext';
-import { 
-  User, 
-  Car, 
-  FileText, 
-  Star, 
-  Edit, 
-  Save, 
-  X, 
-  Phone, 
-  Mail, 
+import {
+  User,
+  FileText,
+  Star,
+  Edit,
+  Save,
+  X,
+  Phone,
+  Mail,
   MapPin,
   Calendar,
   Shield,
@@ -28,16 +27,6 @@ export const DriverProfile: React.FC = () => {
     address: '123 Main St, City, State 12345',
     emergencyContact: 'Jane Driver - +1 (555) 987-6543'
   });
-
-  const vehicleInfo = {
-    make: 'Honda',
-    model: 'Civic',
-    year: '2020',
-    color: 'Silver',
-    licensePlate: 'ABC-1234',
-    insurance: 'Valid until Dec 2024',
-    registration: 'Valid until Mar 2025'
-  };
 
   const documents = [
     { name: 'Driver\'s License', status: 'Verified', expiry: '2026-08-15', type: 'license' },
@@ -57,7 +46,7 @@ export const DriverProfile: React.FC = () => {
   const achievements = [
     { name: 'Top Performer', description: '100+ deliveries this month', icon: Award, color: 'text-yellow-600' },
     { name: 'Customer Favorite', description: '4.9+ rating for 3 months', icon: Star, color: 'text-purple-600' },
-    { name: 'Speed Demon', description: 'Average delivery time under 20 min', icon: Car, color: 'text-blue-600' },
+    { name: 'Speed Demon', description: 'Average delivery time under 20 min', icon: MapPin, color: 'text-blue-600' },
     { name: 'Reliable Driver', description: '98%+ completion rate', icon: Shield, color: 'text-green-600' },
   ];
 
@@ -239,45 +228,7 @@ export const DriverProfile: React.FC = () => {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Vehicle Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Car className="h-5 w-5" />
-              Vehicle Information
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-600">Make & Model</label>
-                <p className="mt-1 text-gray-900">{vehicleInfo.make} {vehicleInfo.model}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-600">Year</label>
-                <p className="mt-1 text-gray-900">{vehicleInfo.year}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-600">Color</label>
-                <p className="mt-1 text-gray-900">{vehicleInfo.color}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-600">License Plate</label>
-                <p className="mt-1 text-gray-900">{vehicleInfo.licensePlate}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-600">Insurance</label>
-                <p className="mt-1 text-gray-900">{vehicleInfo.insurance}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-600">Registration</label>
-                <p className="mt-1 text-gray-900">{vehicleInfo.registration}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
+      <div className="grid grid-cols-1 gap-6">
         {/* Documents */}
         <Card>
           <CardHeader>

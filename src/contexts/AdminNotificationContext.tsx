@@ -187,12 +187,12 @@ export const AdminNotificationProvider: React.FC<AdminNotificationProviderProps>
     }
   };
 
-  // Request notification permission on mount
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
+  // Request notification permission on mount - DISABLED to prevent unwanted popups
+  // useEffect(() => {
+  //   if ('Notification' in window && Notification.permission === 'default') {
+  //     Notification.requestPermission();
+  //   }
+  // }, []);
 
   // Simulate admin notifications for demo purposes
   useEffect(() => {

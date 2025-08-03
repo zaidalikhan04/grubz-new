@@ -1,0 +1,337 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check if user is authenticated and email verified (admin bypass)
+    function isAuthenticated() {
+      return request.auth != null &&
+        (request.auth.token.email_verified == true ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    // Helper function to check if user is authenticated (without email verification requirement)
+    function isAuthenticatedOnly() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Helper function to check user role
+    function hasRole(role) {
+      return request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+    
+    // USERS COLLECTION - Enhanced CRUD Rules with Email Verification
+    match /users/{userId} {
+      // Read: Users can read their own data, admins can read all (requires email verification)
+      allow read: if (isOwner(userId) && isAuthenticated()) || isAdmin();
+
+      // Create: Anyone can create their own user document during signup (no email verification required for initial creation)
+      allow create: if isAuthenticatedOnly() &&
+        request.auth.uid == userId &&
+        request.resource.data.keys().hasAll(['email', 'name', 'role']) &&
+        request.resource.data.email == request.auth.token.email &&
+        (request.resource.data.role == 'customer' || request.resource.data.role == 'admin' ||
+         request.resource.data.role == 'delivery_rider' || request.resource.data.role == 'driver' ||
+         request.resource.data.role == 'restaurant_owner'); // Allow all valid roles
+
+      // Update: Users can update their own data, admins can update any user (requires email verification)
+      allow update: if (isOwner(userId) && isAuthenticated()) || isAdmin();
+
+      // Delete: Only admins can delete users
+      allow delete: if isAdmin();
+    }
+    
+    // NAVIGATION MENUS - Read for authenticated users, write for admins
+    match /navigationMenus/{menuId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // DASHBOARD CONTENT - Read for authenticated users, write for admins
+    match /dashboardContent/{role} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // UI CONFIGURATIONS - Read for authenticated users, write for admins
+    match /uiConfigurations/{role} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ADMIN DASHBOARD - Full access for admins
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+    
+    // RESTAURANTS COLLECTION
+    match /restaurants/{restaurantId} {
+      // Read: Public read for browsing restaurants
+      allow read: if true;
+
+      // Create: Restaurant owners and admins can create restaurants
+      allow create: if isAuthenticated() &&
+        (hasRole('restaurant_owner') || isAdmin()) &&
+        request.resource.data.keys().hasAll(['name', 'email', 'ownerId']);
+
+      // Update: Restaurant owners can update their own restaurants, admins can update any
+      allow update: if isAuthenticated() &&
+        (resource.data.ownerId == request.auth.uid || isAdmin());
+
+      // Delete: Only admins can delete restaurants
+      allow delete: if isAdmin();
+
+      // MENU SUBCOLLECTION
+      match /menu/{menuItemId} {
+        // Read: Public read for browsing menu items
+        allow read: if true;
+
+        // Create: Restaurant owners can create menu items for their restaurants, admins can create any
+        allow create: if isAuthenticated() &&
+          (restaurantId == request.auth.uid || isAdmin());
+
+        // Update: Restaurant owners can update their menu items, admins can update any
+        allow update: if isAuthenticated() &&
+          (restaurantId == request.auth.uid || isAdmin());
+
+        // Delete: Restaurant owners can delete their menu items, admins can delete any
+        allow delete: if isAuthenticated() &&
+          (restaurantId == request.auth.uid || isAdmin());
+      }
+
+      // MENU ITEMS SUBCOLLECTION
+      match /menuItems/{menuItemId} {
+        // Read: Public read for browsing menu items
+        allow read: if true;
+
+        // Create: Restaurant owners can create menu items for their restaurants, admins can create any
+        allow create: if isAuthenticated() &&
+          (restaurantId == request.auth.uid || isAdmin());
+
+        // Update: Restaurant owners can update their menu items, admins can update any
+        allow update: if isAuthenticated() &&
+          (restaurantId == request.auth.uid || isAdmin());
+
+        // Delete: Restaurant owners can delete their menu items, admins can delete any
+        allow delete: if isAuthenticated() &&
+          (restaurantId == request.auth.uid || isAdmin());
+      }
+    }
+    
+    // ORDERS COLLECTION
+    match /orders/{orderId} {
+      // Read: Customers, restaurant owners, drivers, and admins can read relevant orders
+      allow read: if isAuthenticated() && (
+        // Customers can read their own orders
+        resource.data.customerId == request.auth.uid ||
+
+        // Restaurant owners can read orders for their restaurant
+        resource.data.restaurantId == request.auth.uid ||
+
+        // Drivers can read orders assigned to them
+        resource.data.assignedDriverId == request.auth.uid ||
+
+        // Drivers can read unassigned orders that are ready for pickup
+        ((hasRole('delivery_rider') || hasRole('driver')) && resource.data.status == 'readyForPickup' &&
+         (!('assignedDriverId' in resource.data) || resource.data.assignedDriverId == null)) ||
+
+        // Admins can read all orders
+        isAdmin()
+      );
+
+      // Create: Authenticated users can create orders
+      allow create: if isAuthenticated() &&
+        request.resource.data.customerId == request.auth.uid;
+
+      // Update: Multiple scenarios allowed
+      allow update: if isAuthenticated() && (
+        // Admins can update any order
+        isAdmin() ||
+
+        // Customers can update their own orders
+        resource.data.customerId == request.auth.uid ||
+
+        // Restaurant owners can update orders for their restaurant
+        resource.data.restaurantId == request.auth.uid ||
+
+        // Drivers already assigned can update their orders
+        (resource.data.assignedDriverId == request.auth.uid) ||
+
+        // Drivers can claim unassigned orders (set assignedDriverId to their UID)
+        ((!('assignedDriverId' in resource.data) || resource.data.assignedDriverId == null) &&
+         request.resource.data.assignedDriverId == request.auth.uid)
+      );
+
+      // Delete: Only admins can delete orders
+      allow delete: if isAdmin();
+    }
+    
+    // DRIVERS COLLECTION
+    match /drivers/{driverId} {
+      // Read: Drivers can read their own data, admins can read all
+      allow read: if isOwner(driverId) || isAdmin();
+      
+      // Create: Drivers and admins can create driver profiles
+      allow create: if isAuthenticated() && 
+        (request.auth.uid == driverId || isAdmin()) &&
+        request.resource.data.keys().hasAll(['name', 'email', 'userId']);
+      
+      // Update: Drivers can update their own data, admins can update any
+      allow update: if isOwner(driverId) || isAdmin();
+      
+      // Delete: Only admins can delete driver profiles
+      allow delete: if isAdmin();
+    }
+    
+    // PARTNER REQUESTS COLLECTION
+    match /partnerRequests/{requestId} {
+      // Read: Admins can read all requests, users can read their own
+      allow read: if isAdmin() ||
+        (isAuthenticated() && resource.data.userId == request.auth.uid);
+
+      // Create: Authenticated users can create partner requests
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Update: Only admins can update partner requests (approve/deny)
+      allow update: if isAdmin();
+
+      // Delete: Admins can delete requests
+      allow delete: if isAdmin();
+    }
+
+    // RESTAURANT APPLICATIONS COLLECTION
+    match /restaurantApplications/{userId} {
+      // Read: Users can read their own applications, admins can read all
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Create: Users can create their own applications
+      allow create: if isAuthenticated() &&
+        request.auth.uid == userId &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Update: Only admins can update applications (for approval/rejection)
+      allow update: if isAdmin();
+
+      // Delete: Only admins can delete applications
+      allow delete: if isAdmin();
+    }
+
+    // DELIVERY APPLICATIONS COLLECTION
+    match /deliveryApplications/{userId} {
+      // Read: Users can read their own applications, admins can read all
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Create: Users can create their own applications
+      allow create: if isAuthenticated() &&
+        request.auth.uid == userId &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Update: Only admins can update applications (for approval/rejection)
+      allow update: if isAdmin();
+
+      // Delete: Only admins can delete applications
+      allow delete: if isAdmin();
+    }
+    
+    // ANALYTICS COLLECTION (Admin only)
+    match /analytics/{document} {
+      allow read, write: if isAdmin();
+    }
+    
+    // SYSTEM SETTINGS COLLECTION (Admin only)
+    match /systemSettings/{document} {
+      allow read, write: if isAdmin();
+    }
+    
+    // NOTIFICATIONS COLLECTION
+    match /notifications/{notificationId} {
+      // Read: Users can read their own notifications, admins can read all
+      allow read: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Create: System can create notifications (admins)
+      allow create: if isAdmin();
+      
+      // Update: Users can mark their notifications as read, admins can update any
+      allow update: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Delete: Users can delete their own notifications, admins can delete any
+      allow delete: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+    }
+    
+    // AUDIT LOGS COLLECTION (Admin only)
+    match /auditLogs/{logId} {
+      allow read, write: if isAdmin();
+    }
+
+    // MENU ITEMS COLLECTION (Global)
+    match /menuItems/{menuItemId} {
+      // Read: Public read for browsing menu items
+      allow read: if true;
+
+      // Create: Restaurant owners and admins can create menu items
+      allow create: if isAuthenticated() &&
+        (hasRole('restaurant_owner') || isAdmin());
+
+      // Update: Restaurant owners can update their own menu items, admins can update any
+      allow update: if isAuthenticated() &&
+        (resource.data.restaurantId == request.auth.uid || isAdmin());
+
+      // Delete: Restaurant owners can delete their own menu items, admins can delete any
+      allow delete: if isAuthenticated() &&
+        (resource.data.restaurantId == request.auth.uid || isAdmin());
+    }
+
+    // MENUS COLLECTION (Global)
+    match /menus/{menuItemId} {
+      // Read: Public read for browsing menu items
+      allow read: if true;
+
+      // Create: Restaurant owners and admins can create menu items
+      allow create: if isAuthenticated() &&
+        (hasRole('restaurant_owner') || isAdmin());
+
+      // Update: Restaurant owners can update their own menu items, admins can update any
+      allow update: if isAuthenticated() &&
+        (resource.data.restaurantId == request.auth.uid || isAdmin());
+
+      // Delete: Restaurant owners can delete their own menu items, admins can delete any
+      allow delete: if isAuthenticated() &&
+        (resource.data.restaurantId == request.auth.uid || isAdmin());
+    }
+
+    // FAVORITES COLLECTION
+    match /favorites/{favoriteId} {
+      // Read: Users can read their own favorites, admins can read all
+      allow read: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Create: Users can create their own favorites
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.keys().hasAll(['userId', 'restaurantId', 'restaurantName', 'addedAt']);
+
+      // Update: Users can update their own favorites, admins can update any
+      allow update: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Delete: Users can delete their own favorites, admins can delete any
+      allow delete: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+    }
+  }
+}

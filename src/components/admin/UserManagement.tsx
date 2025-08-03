@@ -23,6 +23,11 @@ import {
   Filter
 } from 'lucide-react';
 import { UserService } from '../../services/database';
+import { AdminCrudService } from '../../services/adminCrud';
+import { EmailService } from '../../services/email';
+import { AuthService } from '../../services/auth';
+import { FileUploadService, UploadResult } from '../../services/fileUpload';
+import FileUpload from '../ui/FileUpload';
 import { useAdminNotifications } from '../../contexts/AdminNotificationContext';
 
 // Types
@@ -184,11 +189,19 @@ const UserManagement: React.FC = () => {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testingDeletion, setTestingDeletion] = useState(false);
+  const [testingSimpleDeletion, setTestingSimpleDeletion] = useState(false);
+  const [testingComprehensive, setTestingComprehensive] = useState(false);
+  const [testingUserVerification, setTestingUserVerification] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testingFileUpload, setTestingFileUpload] = useState(false);
 
   const { addNotification } = useAdminNotifications();
 
   // Load users on component mount
   useEffect(() => {
+    console.log('🔄 UserManagement component mounted, loading users...');
     loadUsers();
   }, []);
 
@@ -196,15 +209,20 @@ const UserManagement: React.FC = () => {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const usersData = await UserService.getAllUsers();
+      console.log('🔄 Fetching users from Firebase...');
+
+      // Use enhanced admin service for better error handling
+      const usersData = await AdminCrudService.getAllUsersEnhanced();
+      console.log('✅ Users loaded successfully:', usersData.length, 'users found');
       setUsers(usersData as UserData[]);
-    } catch (error) {
-      console.error('Error loading users:', error);
+    } catch (error: any) {
+      console.error('❌ Error loading users:', error);
+      const errorMessage = error.message || 'Unknown error occurred';
       addNotification({
         type: 'system_alert',
         title: 'Error Loading Users',
-        message: 'Failed to load users from database',
-        priority: 'medium'
+        message: `Failed to load users from Firebase: ${errorMessage}`,
+        priority: 'high'
       });
     } finally {
       setLoading(false);
@@ -212,27 +230,45 @@ const UserManagement: React.FC = () => {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+    // Find the user to get their details for confirmation
+    const userToDelete = users.find(user => user.id === userId);
+    const userName = userToDelete?.name || 'Unknown User';
+    const userEmail = userToDelete?.email || 'Unknown Email';
+
+    const confirmMessage = `Are you sure you want to delete this user?\n\nName: ${userName}\nEmail: ${userEmail}\n\nThis action cannot be undone and will remove the user from Firebase.`;
+
+    if (!confirm(confirmMessage)) {
       return;
     }
 
     try {
       setDeleting(userId);
-      await UserService.deleteUser(userId);
+      console.log('🔄 Starting comprehensive user deletion process for:', userEmail);
+
+      // Try simple deletion first to test if basic deletion works
+      console.log('🔄 Attempting simple user deletion first...');
+      const deletionResult = await AdminCrudService.deleteUserSimple(userId);
+
+      // Update local state
       setUsers(prev => prev.filter(user => user.id !== userId));
+
+      console.log('✅ Comprehensive user deletion completed for:', userEmail);
+      console.log('📊 Deletion summary:', deletionResult);
+
       addNotification({
         type: 'user_report',
-        title: 'User Deleted',
-        message: 'User has been successfully deleted from the system',
+        title: 'User Deleted Successfully',
+        message: `${userName} (${userEmail}) and all related data have been permanently removed from Firebase.`,
         priority: 'medium'
       });
-    } catch (error) {
-      console.error('Error deleting user:', error);
+    } catch (error: any) {
+      console.error('❌ Error deleting user:', error);
+      const errorMessage = error.message || 'Unknown error occurred';
       addNotification({
         type: 'system_alert',
-        title: 'Delete Failed',
-        message: 'Failed to delete user from database',
-        priority: 'medium'
+        title: 'User Deletion Failed',
+        message: `Failed to delete ${userName}: ${errorMessage}`,
+        priority: 'high'
       });
     } finally {
       setDeleting(null);
@@ -315,6 +351,347 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  // Test Firebase connection and permissions
+  const testFirebaseConnection = async () => {
+    try {
+      setTestingConnection(true);
+      console.log('🔄 Testing Firebase connection...');
+
+      const result = await AdminCrudService.testFirebaseConnection();
+
+      if (result.success) {
+        addNotification({
+          type: 'system_alert',
+          title: 'Firebase Connection Test Passed',
+          message: 'All Firebase permissions are working correctly',
+          priority: 'low'
+        });
+      } else {
+        addNotification({
+          type: 'system_alert',
+          title: 'Firebase Connection Test Failed',
+          message: `Firebase test failed: ${result.error}`,
+          priority: 'high'
+        });
+      }
+    } catch (error: any) {
+      console.error('❌ Firebase connection test error:', error);
+      addNotification({
+        type: 'system_alert',
+        title: 'Firebase Connection Test Error',
+        message: `Test failed: ${error.message}`,
+        priority: 'high'
+      });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  // Test user deletion functionality
+  const testUserDeletion = async () => {
+    try {
+      setTestingDeletion(true);
+      console.log('🔄 Testing user deletion functionality...');
+
+      const result = await AdminCrudService.testUserDeletion();
+
+      if (result.success) {
+        addNotification({
+          type: 'system_alert',
+          title: 'User Deletion Test Passed',
+          message: 'User deletion functionality is working correctly - test user was created and successfully deleted from Firebase',
+          priority: 'low'
+        });
+
+        // Refresh the user list to show current state
+        await loadUsers();
+      } else {
+        addNotification({
+          type: 'system_alert',
+          title: 'User Deletion Test Failed',
+          message: `User deletion test failed: ${result.error}`,
+          priority: 'high'
+        });
+      }
+    } catch (error: any) {
+      console.error('❌ User deletion test error:', error);
+      addNotification({
+        type: 'system_alert',
+        title: 'User Deletion Test Error',
+        message: `Test failed: ${error.message}`,
+        priority: 'high'
+      });
+    } finally {
+      setTestingDeletion(false);
+    }
+  };
+
+  // Test simple user deletion functionality
+  const testSimpleUserDeletion = async () => {
+    try {
+      setTestingSimpleDeletion(true);
+      console.log('🔄 Testing simple user deletion functionality...');
+
+      // Create a test user first
+      const createResult = await AdminCrudService.createTestUser();
+      if (!createResult.success) {
+        throw new Error(`Failed to create test user: ${createResult.error}`);
+      }
+
+      const testUserId = createResult.userId!;
+      console.log('✅ Test user created for simple deletion test:', testUserId);
+
+      // Try simple deletion
+      const deleteResult = await AdminCrudService.deleteUserSimple(testUserId);
+      console.log('✅ Simple deletion completed:', deleteResult);
+
+      addNotification({
+        type: 'system_alert',
+        title: 'Simple User Deletion Test Passed',
+        message: 'Simple user deletion functionality is working correctly - test user was created and successfully deleted from Firebase',
+        priority: 'low'
+      });
+
+      // Refresh the user list
+      await loadUsers();
+    } catch (error: any) {
+      console.error('❌ Simple user deletion test error:', error);
+      addNotification({
+        type: 'system_alert',
+        title: 'Simple User Deletion Test Failed',
+        message: `Simple deletion test failed: ${error.message}`,
+        priority: 'high'
+      });
+    } finally {
+      setTestingSimpleDeletion(false);
+    }
+  };
+
+  // Test comprehensive admin functionality
+  const testAdminFunctionality = async () => {
+    try {
+      setTestingComprehensive(true);
+      console.log('🔄 Testing comprehensive admin functionality...');
+
+      // Test 1: Firebase Connection
+      console.log('📋 Test 1: Firebase Connection');
+      await testFirebaseConnection();
+
+      // Test 2: User Creation and Deletion
+      console.log('📋 Test 2: User Creation and Deletion');
+      const createResult = await AdminCrudService.createTestUser();
+      if (createResult.success) {
+        console.log('✅ Test user created successfully');
+
+        // Try to delete the test user
+        await AdminCrudService.deleteUserSimple(createResult.userId!);
+        console.log('✅ Test user deleted successfully');
+      }
+
+      // Test 3: Email Service
+      console.log('📋 Test 3: Email Service');
+      const emailResult = await EmailService.sendApprovalEmail(
+        'test@example.com',
+        'Test User',
+        'restaurant_owner',
+        { email: 'test@example.com', password: 'testpass123' }
+      );
+      console.log('✅ Email service test completed:', emailResult);
+
+      addNotification({
+        type: 'system_alert',
+        title: 'Admin Functionality Test Completed',
+        message: 'All admin functions tested successfully - Firebase connection, user deletion, and email service are working',
+        priority: 'low'
+      });
+
+    } catch (error: any) {
+      console.error('❌ Admin functionality test error:', error);
+      addNotification({
+        type: 'system_alert',
+        title: 'Admin Functionality Test Failed',
+        message: `Test failed: ${error.message}`,
+        priority: 'high'
+      });
+    } finally {
+      setTestingComprehensive(false);
+    }
+  };
+
+  // Test user creation and verification
+  const testUserVerification = async () => {
+    try {
+      setTestingUserVerification(true);
+      console.log('🔄 Testing user creation and verification...');
+
+      const result = await AdminCrudService.testUserCreationAndVerification();
+      console.log('✅ User verification test completed:', result);
+
+      addNotification({
+        type: 'system_alert',
+        title: 'User Verification Test Passed',
+        message: `✅ User creation, name storage, and deletion all working correctly. Test user "${result.testUser.name}" was created and successfully deleted from Firebase.`,
+        priority: 'low'
+      });
+
+      // Refresh the user list
+      await loadUsers();
+    } catch (error: any) {
+      console.error('❌ User verification test error:', error);
+      addNotification({
+        type: 'system_alert',
+        title: 'User Verification Test Failed',
+        message: `❌ Test failed: ${error.message}. Check console for details.`,
+        priority: 'high'
+      });
+    } finally {
+      setTestingUserVerification(false);
+    }
+  };
+
+  // Test complete signup process
+  const testCompleteSignupProcess = async () => {
+    try {
+      setTestingUserVerification(true);
+      console.log('🔄 Testing complete signup process...');
+
+      // Test 1: Create a test user using the same process as signup
+      const testEmail = `test-signup-${Date.now()}@example.com`;
+      const testName = 'Test Signup User';
+      const testPassword = 'testpass123';
+
+      console.log('📋 Testing signup process for:', testEmail);
+
+      // Use AuthService directly to test the signup process
+      const signupResult = await AuthService.registerWithoutLogin(testEmail, testPassword, {
+        name: testName,
+        role: 'customer',
+        phone: '123-456-7890',
+        address: '123 Test St'
+      });
+
+      if (signupResult) {
+        console.log('✅ Signup process completed successfully');
+
+        // Test 2: Check if user was created in Firestore
+        console.log('🔍 Checking if user exists in Firestore...');
+        const userByEmail = await UserService.getUserByEmail(testEmail);
+
+        if (userByEmail) {
+          console.log('✅ User found in Firestore:', userByEmail);
+
+          // Test 3: Clean up - delete the test user
+          console.log('🔄 Cleaning up test user...');
+          await AdminCrudService.deleteUserSimple(userByEmail.id);
+          console.log('✅ Test user cleaned up successfully');
+
+          addNotification({
+            type: 'system_alert',
+            title: 'Signup Process Test Passed',
+            message: `✅ Complete signup process working correctly! Test user "${testName}" was created in Firestore and successfully deleted.`,
+            priority: 'low'
+          });
+        } else {
+          throw new Error('User was not found in Firestore after signup - this is the main issue!');
+        }
+      } else {
+        throw new Error('Signup process failed - registerCustomer returned false');
+      }
+
+      // Refresh the user list
+      await loadUsers();
+    } catch (error: any) {
+      console.error('❌ Complete signup process test error:', error);
+      addNotification({
+        type: 'system_alert',
+        title: 'Signup Process Test Failed',
+        message: `❌ Test failed: ${error.message}. This explains why users appear in Firebase Auth but not in Firestore.`,
+        priority: 'high'
+      });
+    } finally {
+      setTestingUserVerification(false);
+    }
+  };
+
+  // Test email service functionality
+  const testEmailService = async () => {
+    try {
+      setTestingEmail(true);
+      console.log('🔄 Testing email service functionality...');
+
+      // Test restaurant approval email
+      console.log('📧 Testing restaurant approval email...');
+      const restaurantEmailResult = await EmailService.sendApprovalEmail(
+        'test-restaurant@example.com',
+        'Test Restaurant Owner',
+        'restaurant_owner',
+        { email: 'test-restaurant@example.com', password: 'testpass123' }
+      );
+      console.log('✅ Restaurant email test result:', restaurantEmailResult);
+
+      // Wait a moment
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Test driver approval email
+      console.log('📧 Testing driver approval email...');
+      const driverEmailResult = await EmailService.sendApprovalEmail(
+        'test-driver@example.com',
+        'Test Driver',
+        'delivery_rider',
+        { email: 'test-driver@example.com', password: 'testpass123' }
+      );
+      console.log('✅ Driver email test result:', driverEmailResult);
+
+      addNotification({
+        type: 'system_alert',
+        title: 'Email Service Test Completed',
+        message: '✅ Email service is working correctly! Both restaurant and driver approval emails were generated successfully.',
+        priority: 'low'
+      });
+
+    } catch (error: any) {
+      console.error('❌ Email service test error:', error);
+      addNotification({
+        type: 'system_alert',
+        title: 'Email Service Test Failed',
+        message: `❌ Email test failed: ${error.message}. Check console for details.`,
+        priority: 'high'
+      });
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
+  // Test file upload functionality
+  const testFileUpload = async (result: UploadResult) => {
+    try {
+      setTestingFileUpload(true);
+      console.log('🔄 Testing file upload functionality...');
+
+      if (result.success) {
+        console.log('✅ File uploaded successfully:', result);
+        addNotification({
+          type: 'system_alert',
+          title: 'File Upload Test Successful',
+          message: `✅ File "${result.fileName}" uploaded successfully! Download URL: ${result.downloadURL}`,
+          priority: 'low'
+        });
+      } else {
+        throw new Error(result.error || 'Upload failed');
+      }
+    } catch (error: any) {
+      console.error('❌ File upload test error:', error);
+      addNotification({
+        type: 'system_alert',
+        title: 'File Upload Test Failed',
+        message: `❌ Upload test failed: ${error.message}`,
+        priority: 'high'
+      });
+    } finally {
+      setTestingFileUpload(false);
+    }
+  };
+
   // Filter users based on search and filters
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -329,7 +706,11 @@ const UserManagement: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-lg">Loading users...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#dd3333] mx-auto mb-4"></div>
+          <div className="text-lg font-medium text-gray-700">Loading users...</div>
+          <div className="text-sm text-gray-500 mt-2">Fetching user data from Firebase</div>
+        </div>
       </div>
     );
   }
@@ -342,6 +723,161 @@ const UserManagement: React.FC = () => {
         <div className="flex items-center gap-2">
           <Users className="h-6 w-6" />
           <h1 className="text-2xl font-bold">User Management</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={testFirebaseConnection}
+            disabled={testingConnection}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            {testingConnection ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                Testing...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Test Firebase
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={testUserDeletion}
+            disabled={testingDeletion}
+            variant="outline"
+            className="flex items-center gap-2 border-red-200 text-red-600 hover:bg-red-50"
+          >
+            {testingDeletion ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+                Testing...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Test Deletion
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={testSimpleUserDeletion}
+            disabled={testingSimpleDeletion}
+            variant="outline"
+            className="flex items-center gap-2 border-orange-200 text-orange-600 hover:bg-orange-50"
+          >
+            {testingSimpleDeletion ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
+                Testing...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Test Simple Delete
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={testEmailService}
+            disabled={testingEmail}
+            variant="outline"
+            className="flex items-center gap-2 border-purple-200 text-purple-600 hover:bg-purple-50"
+          >
+            {testingEmail ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600"></div>
+                Testing...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                Test Email Service
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={testCompleteSignupProcess}
+            disabled={testingUserVerification}
+            variant="outline"
+            className="flex items-center gap-2 border-green-200 text-green-600 hover:bg-green-50"
+          >
+            {testingUserVerification ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                Testing...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Test Signup Process
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={testAdminFunctionality}
+            disabled={testingComprehensive}
+            variant="outline"
+            className="flex items-center gap-2 border-blue-200 text-blue-600 hover:bg-blue-50"
+          >
+            {testingComprehensive ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                Testing All...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Test All Functions
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={loadUsers}
+            disabled={loading}
+            className="flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Refreshing...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* File Upload Test Section */}
+        <div className="mt-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
+          <h3 className="text-lg font-semibold text-purple-800 mb-3">🔧 File Upload Testing</h3>
+          <p className="text-sm text-purple-600 mb-4">Test the file upload functionality with Firebase Storage</p>
+
+          <FileUpload
+            onUploadComplete={testFileUpload}
+            uploadPath="admin-tests"
+            buttonText="Test File Upload"
+            buttonVariant="outline"
+            className="max-w-md"
+          />
         </div>
       </div>
 

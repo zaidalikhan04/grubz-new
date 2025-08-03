@@ -1,42 +1,184 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
-import { 
-  User, 
-  Camera, 
-  Edit, 
-  Save, 
-  MapPin, 
-  Phone, 
-  Mail, 
+import { useAuth } from '../../contexts/AuthContext';
+import { RestaurantService, Restaurant } from '../../services/restaurant';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import {
+  User,
+  Camera,
+  Edit,
+  Save,
+  MapPin,
+  Phone,
+  Mail,
   Clock,
   Star,
   Award,
   TrendingUp,
-  Users
+  Users,
+  Loader2
 } from 'lucide-react';
 
 export const RestaurantProfile: React.FC = () => {
+  const { currentUser } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [profileData, setProfileData] = useState({
-    restaurantName: 'Mario\'s Italian Kitchen',
-    ownerName: 'Mario Rossi',
-    email: 'mario@mariositalian.com',
-    phone: '+1 (555) 123-4567',
-    address: '123 Main Street, Downtown, City 12345',
-    description: 'Authentic Italian cuisine with fresh ingredients and traditional recipes passed down through generations.',
-    cuisine: 'Italian',
-    priceRange: '$$',
-    established: '2015'
+    restaurantName: '',
+    ownerName: '',
+    email: '',
+    phone: '',
+    address: '',
+    description: '',
+    cuisine: '',
+    website: ''
   });
 
+  // Load restaurant data with real-time sync
+  useEffect(() => {
+    if (!currentUser) return;
+
+    console.log('🔄 Setting up restaurant profile listeners for user:', currentUser.id);
+    setLoading(true);
+
+    let loadedCount = 0;
+    const totalListeners = 2;
+
+    const checkComplete = () => {
+      loadedCount++;
+      if (loadedCount === totalListeners) {
+        setLoading(false);
+      }
+    };
+
+    // Listen to user data for basic profile info
+    const unsubscribeUser = onSnapshot(
+      doc(db, 'users', currentUser.id),
+      (doc) => {
+        console.log('📄 User document updated:', doc.exists());
+        if (doc.exists()) {
+          const userData = doc.data();
+          console.log('👤 User data:', userData);
+
+          // Update profile data with user info
+          setProfileData(prev => ({
+            ...prev,
+            ownerName: userData.name || currentUser.name || '',
+            email: userData.email || currentUser.email || '',
+            phone: userData.phone || ''
+          }));
+        }
+        checkComplete();
+      },
+      (error) => {
+        console.error('❌ Error in user snapshot:', error);
+        checkComplete();
+      }
+    );
+
+    // Listen to restaurant data from restaurants/{uid} - only approved restaurants
+    const unsubscribeRestaurant = onSnapshot(
+      doc(db, 'restaurants', currentUser.id),
+      (doc) => {
+        console.log('📄 Restaurant document updated:', doc.exists());
+        if (doc.exists()) {
+          const restaurantData = doc.data();
+          console.log('🏪 Restaurant data:', restaurantData);
+
+          // Only show if status is approved
+          if (restaurantData.status === 'approved') {
+            // Create restaurant object
+            const restaurant: Restaurant = {
+              id: doc.id,
+              name: restaurantData.restaurantName || restaurantData.name || '',
+              description: restaurantData.description || '',
+              cuisine: restaurantData.cuisine || '',
+              address: restaurantData.address || '',
+              phone: restaurantData.phone || '',
+              email: restaurantData.email || currentUser.email || '',
+              website: restaurantData.website || '',
+              hours: restaurantData.hours || {},
+              rating: restaurantData.rating || 4.5,
+              totalOrders: restaurantData.totalOrders || 0,
+              isActive: restaurantData.isActive || false,
+              createdAt: restaurantData.createdAt?.toDate() || new Date(),
+              ownerId: currentUser.id
+            };
+
+            setRestaurant(restaurant);
+            setProfileData({
+              restaurantName: restaurant.name,
+              ownerName: currentUser.name || '',
+              email: restaurant.email,
+              phone: restaurant.phone,
+              address: restaurant.address,
+              description: restaurant.description,
+              cuisine: restaurant.cuisine,
+              website: restaurant.website
+            });
+          } else {
+            console.log('ℹ️ Restaurant not approved yet, checking for application...');
+            setRestaurant(null);
+            checkForApplicationData();
+          }
+        } else {
+          console.log('ℹ️ No restaurant data found, checking for application...');
+          // If no restaurant data, check for application data
+          checkForApplicationData();
+        }
+        checkComplete();
+      },
+      (error) => {
+        console.error('❌ Error in restaurant snapshot:', error);
+        checkComplete();
+      }
+    );
+
+    // Function to check for application data if no restaurant exists
+    const checkForApplicationData = async () => {
+      try {
+        const applicationDoc = await getDoc(doc(db, 'restaurantApplications', currentUser.id));
+        if (applicationDoc.exists()) {
+          const appData = applicationDoc.data();
+          console.log('📋 Found restaurant application data:', appData);
+
+          // Pre-populate form with application data
+          setProfileData(prev => ({
+            ...prev,
+            restaurantName: appData.restaurantName || '',
+            email: appData.userEmail || currentUser.email || '',
+            phone: appData.phone || '',
+            address: appData.address || '',
+            description: appData.description || '',
+            cuisine: appData.cuisine || '',
+            website: appData.website || ''
+          }));
+        }
+      } catch (error) {
+        console.error('❌ Error checking application data:', error);
+      }
+    };
+
+    // Cleanup function
+    return () => {
+      console.log('🧹 Cleaning up restaurant profile listeners');
+      unsubscribeUser();
+      unsubscribeRestaurant();
+    };
+  }, [currentUser]);
+
   const stats = [
-    { label: 'Total Orders', value: '2,847', icon: TrendingUp, color: 'text-blue-600' },
-    { label: 'Customer Rating', value: '4.8', icon: Star, color: 'text-yellow-600' },
-    { label: 'Total Reviews', value: '324', icon: Users, color: 'text-green-600' },
-    { label: 'Years Active', value: '9', icon: Award, color: 'text-purple-600' }
+    { label: 'Total Orders', value: restaurant?.totalOrders?.toString() || '0', icon: TrendingUp, color: 'text-blue-600' },
+    { label: 'Customer Rating', value: restaurant?.rating?.toFixed(1) || '0.0', icon: Star, color: 'text-yellow-600' },
+    { label: 'Status', value: restaurant?.isActive ? 'Active' : 'Inactive', icon: Users, color: restaurant?.isActive ? 'text-green-600' : 'text-red-600' },
+    { label: 'Since', value: restaurant ? new Date(restaurant.createdAt).getFullYear().toString() : 'N/A', icon: Award, color: 'text-purple-600' }
   ];
 
   const achievements = [
@@ -53,12 +195,114 @@ export const RestaurantProfile: React.FC = () => {
     }));
   };
 
-  const handleSave = () => {
-    // In a real app, this would save to the backend
-    console.log('Saving profile:', profileData);
-    setIsEditing(false);
-    alert('Profile updated successfully!');
+  const handleSave = async () => {
+    if (!restaurant) return;
+
+    try {
+      setSaving(true);
+      await RestaurantService.updateRestaurant(restaurant.id, {
+        name: profileData.restaurantName,
+        email: profileData.email,
+        phone: profileData.phone,
+        address: profileData.address,
+        description: profileData.description,
+        cuisine: profileData.cuisine,
+        website: profileData.website
+      });
+
+      setIsEditing(false);
+      alert('Restaurant profile updated successfully!');
+    } catch (error) {
+      console.error('Error updating restaurant:', error);
+      alert('Error updating restaurant profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Loading restaurant profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!restaurant) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center py-12">
+          <div className="max-w-md mx-auto">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <User className="h-8 w-8 text-gray-400" />
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Restaurant Profile Setup</h2>
+            <p className="text-gray-600 mb-6">
+              Complete your restaurant profile to start receiving orders and managing your business.
+            </p>
+
+            {/* Show current user data */}
+            <Card className="text-left mb-6">
+              <CardHeader>
+                <CardTitle className="text-lg">Your Account Information</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Owner Name</Label>
+                  <p className="text-gray-900">{profileData.ownerName || currentUser?.name || 'Not provided'}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Email</Label>
+                  <p className="text-gray-900">{profileData.email || currentUser?.email || 'Not provided'}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Phone</Label>
+                  <p className="text-gray-900">{profileData.phone || 'Not provided'}</p>
+                </div>
+                {profileData.restaurantName && (
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Restaurant Name (from application)</Label>
+                    <p className="text-gray-900">{profileData.restaurantName}</p>
+                  </div>
+                )}
+                {profileData.cuisine && (
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Cuisine Type (from application)</Label>
+                    <p className="text-gray-900">{profileData.cuisine}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="space-y-3">
+              <p className="text-sm text-gray-500">
+                Your restaurant profile will be created once your application is approved by our admin team.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button
+                  onClick={() => window.location.href = '/apply/restaurant-form'}
+                  variant="outline"
+                  className="flex items-center gap-2"
+                >
+                  <Edit className="h-4 w-4" />
+                  Update Application
+                </Button>
+                <Button
+                  onClick={() => window.location.href = '/dashboard'}
+                  className="bg-[#dd3333] hover:bg-[#c52e2e]"
+                >
+                  Back to Dashboard
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -67,12 +311,19 @@ export const RestaurantProfile: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Restaurant Profile</h1>
           <p className="text-gray-600">Manage your restaurant information and public profile</p>
         </div>
-        <Button 
+        <Button
           onClick={() => isEditing ? handleSave() : setIsEditing(true)}
+          disabled={saving}
           className="bg-[#704ce5] hover:bg-[#5a3bc4] flex items-center gap-2"
         >
-          {isEditing ? <Save className="h-4 w-4" /> : <Edit className="h-4 w-4" />}
-          {isEditing ? 'Save Changes' : 'Edit Profile'}
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : isEditing ? (
+            <Save className="h-4 w-4" />
+          ) : (
+            <Edit className="h-4 w-4" />
+          )}
+          {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Edit Profile'}
         </Button>
       </div>
 

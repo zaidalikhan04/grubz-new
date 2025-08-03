@@ -1,28 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
-import { 
-  Store, 
-  Clock, 
-  MapPin, 
-  Phone, 
-  Mail, 
+import { Switch } from '../ui/switch';
+import { useAuth } from '../../contexts/AuthContext';
+import { RestaurantService, Restaurant } from '../../services/restaurant';
+import {
+  Store,
+  Clock,
+  MapPin,
+  Phone,
+  Mail,
   DollarSign,
   Truck,
   Bell,
   Shield,
-  Save
+  Save,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 export const RestaurantSettings: React.FC = () => {
+  const { currentUser } = useAuth();
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string>('');
+
   const [settings, setSettings] = useState({
-    restaurantName: 'Mario\'s Italian Kitchen',
-    description: 'Authentic Italian cuisine with fresh ingredients and traditional recipes',
-    address: '123 Main Street, Downtown',
-    phone: '+1 (555) 123-4567',
-    email: 'contact@mariositalian.com',
+    restaurantName: '',
+    description: '',
+    address: '',
+    phone: '',
+    email: '',
+    website: '',
     minimumOrder: '15.00',
     deliveryFee: '3.99',
     deliveryRadius: '5',
@@ -37,7 +49,7 @@ export const RestaurantSettings: React.FC = () => {
     }
   });
 
-  const operatingHours = [
+  const [operatingHours, setOperatingHours] = useState([
     { day: 'Monday', open: '11:00', close: '22:00', isOpen: true },
     { day: 'Tuesday', open: '11:00', close: '22:00', isOpen: true },
     { day: 'Wednesday', open: '11:00', close: '22:00', isOpen: true },
@@ -45,7 +57,70 @@ export const RestaurantSettings: React.FC = () => {
     { day: 'Friday', open: '11:00', close: '23:00', isOpen: true },
     { day: 'Saturday', open: '10:00', close: '23:00', isOpen: true },
     { day: 'Sunday', open: '12:00', close: '21:00', isOpen: false }
-  ];
+  ]);
+
+  // Load restaurant data
+  useEffect(() => {
+    const loadRestaurantData = async () => {
+      if (!currentUser) return;
+
+      try {
+        setLoading(true);
+        const restaurantData = await RestaurantService.getRestaurantByOwnerId(currentUser.id);
+
+        if (restaurantData) {
+          setRestaurant(restaurantData);
+
+          // Update settings with restaurant data
+          setSettings({
+            restaurantName: restaurantData.name || '',
+            description: restaurantData.description || '',
+            address: restaurantData.address || '',
+            phone: restaurantData.phone || '',
+            email: restaurantData.email || '',
+            website: restaurantData.website || '',
+            minimumOrder: '15.00', // These could be added to restaurant model later
+            deliveryFee: '3.99',
+            deliveryRadius: '5',
+            estimatedDeliveryTime: '30-45',
+            isOpen: restaurantData.isActive || false,
+            acceptingOrders: restaurantData.isActive || false,
+            notifications: {
+              newOrders: true,
+              orderUpdates: true,
+              customerReviews: true,
+              promotions: false
+            }
+          });
+
+          // Convert restaurant hours to operating hours format
+          if (restaurantData.hours) {
+            const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const hoursArray = daysOrder.map(day => {
+              const dayKey = day.toLowerCase();
+              const dayHours = restaurantData.hours[dayKey];
+              return {
+                day,
+                open: dayHours?.open || '09:00',
+                close: dayHours?.close || '22:00',
+                isOpen: !dayHours?.closed
+              };
+            });
+            setOperatingHours(hoursArray);
+          }
+        } else {
+          setMessage('❌ No restaurant found. Please set up your restaurant first.');
+        }
+      } catch (error) {
+        console.error('Error loading restaurant data:', error);
+        setMessage('❌ Failed to load restaurant data.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadRestaurantData();
+  }, [currentUser]);
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setSettings(prev => ({
@@ -64,11 +139,84 @@ export const RestaurantSettings: React.FC = () => {
     }));
   };
 
-  const handleSave = () => {
-    // In a real app, this would save to the backend
-    console.log('Saving settings:', settings);
-    alert('Settings saved successfully!');
+  const handleHoursChange = (index: number, field: 'open' | 'close' | 'isOpen', value: string | boolean) => {
+    setOperatingHours(prev => prev.map((schedule, i) =>
+      i === index ? { ...schedule, [field]: value } : schedule
+    ));
   };
+
+  const handleSave = async () => {
+    if (!restaurant || !currentUser) {
+      setMessage('❌ No restaurant data to save.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage('');
+
+    try {
+      // Convert operating hours back to restaurant hours format
+      const hoursData: { [key: string]: { open: string; close: string; closed: boolean } } = {};
+      operatingHours.forEach(schedule => {
+        const dayKey = schedule.day.toLowerCase();
+        hoursData[dayKey] = {
+          open: schedule.open,
+          close: schedule.close,
+          closed: !schedule.isOpen
+        };
+      });
+
+      // Prepare update data
+      const updateData: Partial<Restaurant> = {
+        name: settings.restaurantName,
+        description: settings.description,
+        address: settings.address,
+        phone: settings.phone,
+        email: settings.email,
+        website: settings.website,
+        hours: hoursData,
+        isActive: settings.isOpen
+      };
+
+      // Update restaurant in database
+      await RestaurantService.updateRestaurant(restaurant.id, updateData);
+
+      setMessage('✅ Settings saved successfully!');
+      console.log('✅ Restaurant settings updated:', updateData);
+
+      // Clear message after 3 seconds
+      setTimeout(() => setMessage(''), 3000);
+
+    } catch (error) {
+      console.error('❌ Error saving restaurant settings:', error);
+      setMessage('❌ Failed to save settings. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
+          <p className="text-gray-600">Loading restaurant settings...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!restaurant) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No Restaurant Found</h3>
+          <p className="text-gray-600">You need to set up your restaurant first to access settings.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -77,11 +225,35 @@ export const RestaurantSettings: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Restaurant Settings</h1>
           <p className="text-gray-600">Manage your restaurant information and preferences</p>
         </div>
-        <Button onClick={handleSave} className="bg-[#704ce5] hover:bg-[#5a3bc4] flex items-center gap-2">
-          <Save className="h-4 w-4" />
-          Save Changes
+        <Button
+          onClick={handleSave}
+          disabled={saving}
+          className="bg-[#704ce5] hover:bg-[#5a3bc4] flex items-center gap-2"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="h-4 w-4" />
+              Save Changes
+            </>
+          )}
         </Button>
       </div>
+
+      {/* Status Message */}
+      {message && (
+        <div className={`p-3 rounded-md text-sm ${
+          message.includes('✅')
+            ? 'bg-green-50 text-green-800 border border-green-200'
+            : 'bg-red-50 text-red-800 border border-red-200'
+        }`}>
+          {message}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Restaurant Information */}
@@ -247,21 +419,34 @@ export const RestaurantSettings: React.FC = () => {
                     {schedule.isOpen ? 'Open' : 'Closed'}
                   </Badge>
                 </div>
-                {schedule.isOpen && (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="time"
-                      value={schedule.open}
-                      className="w-24"
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={schedule.isOpen}
+                      onChange={(e) => handleHoursChange(index, 'isOpen', e.target.checked)}
+                      className="mr-2"
                     />
-                    <span className="text-gray-500">to</span>
-                    <Input
-                      type="time"
-                      value={schedule.close}
-                      className="w-24"
-                    />
-                  </div>
-                )}
+                    <span className="text-sm">Open</span>
+                  </label>
+                  {schedule.isOpen && (
+                    <>
+                      <Input
+                        type="time"
+                        value={schedule.open}
+                        onChange={(e) => handleHoursChange(index, 'open', e.target.value)}
+                        className="w-24"
+                      />
+                      <span className="text-gray-500">to</span>
+                      <Input
+                        type="time"
+                        value={schedule.close}
+                        onChange={(e) => handleHoursChange(index, 'close', e.target.value)}
+                        className="w-24"
+                      />
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -291,14 +476,10 @@ export const RestaurantSettings: React.FC = () => {
                     {key === 'promotions' && 'Receive promotional and marketing updates'}
                   </p>
                 </div>
-                <Button
-                  variant={value ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => handleNotificationChange(key, !value)}
-                  className={value ? 'bg-[#704ce5] hover:bg-[#5a3bc4]' : ''}
-                >
-                  {value ? 'On' : 'Off'}
-                </Button>
+                <Switch
+                  checked={value}
+                  onCheckedChange={(checked) => handleNotificationChange(key, checked)}
+                />
               </div>
             ))}
           </div>

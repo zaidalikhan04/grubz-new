@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { 
-  Clock, 
-  CheckCircle, 
-  AlertCircle, 
-  Phone, 
+import { OrderService, OrderStatus } from '../../services/order';
+import {
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Phone,
   MapPin,
   Filter,
   Search,
@@ -89,9 +90,9 @@ export const OrdersManagement: React.FC = () => {
           icon: Clock,
           label: 'Preparing'
         };
-      case 'ready':
-        return { 
-          color: 'bg-blue-100 text-blue-800 border-blue-200', 
+      case 'readyForPickup':
+        return {
+          color: 'bg-blue-100 text-blue-800 border-blue-200',
           icon: CheckCircle,
           label: 'Ready for Pickup'
         };
@@ -104,9 +105,15 @@ export const OrdersManagement: React.FC = () => {
     }
   };
 
-  const updateOrderStatus = (orderId: string, newStatus: string) => {
-    // In a real app, this would update the order in the backend
-    console.log(`Updating order ${orderId} to ${newStatus}`);
+  const updateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
+    try {
+      console.log(`🔄 Updating order ${orderId} to ${newStatus}`);
+      await OrderService.updateOrderStatus(orderId, newStatus);
+      console.log(`✅ Order ${orderId} updated to ${newStatus}`);
+    } catch (error) {
+      console.error('❌ Error updating order status:', error);
+      alert('Failed to update order status');
+    }
   };
 
   const filteredOrders = orders.filter(order => {
@@ -248,22 +255,21 @@ export const OrdersManagement: React.FC = () => {
                     </Button>
                   )}
                   {order.status === 'preparing' && (
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       className="bg-blue-600 hover:bg-blue-700"
-                      onClick={() => updateOrderStatus(order.id, 'ready')}
+                      onClick={() => updateOrderStatus(order.id, 'readyForPickup')}
                     >
-                      Mark Ready
+                      Mark Ready for Pickup
                     </Button>
                   )}
-                  {order.status === 'ready' && (
-                    <Button 
-                      size="sm" 
-                      className="bg-green-600 hover:bg-green-700"
-                      onClick={() => updateOrderStatus(order.id, 'delivered')}
-                    >
-                      Mark Delivered
-                    </Button>
+                  {order.status === 'readyForPickup' && (
+                    <div className="px-3 py-1 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                        Waiting for driver
+                      </div>
+                    </div>
                   )}
                   <Button size="sm" variant="outline">
                     Contact Customer

@@ -29,3 +29,20 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Test files and temporary files
+test-*.js
+test-*.html
+*-test-data.js
+*.test.js
+*.test.ts
+
+# Firebase emulator data
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Build artifacts
+build/
+.cache/

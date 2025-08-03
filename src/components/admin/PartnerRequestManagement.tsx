@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, addDoc, setDoc, where } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, addDoc, setDoc, where, getDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, getAuth } from 'firebase/auth';
 import { initializeApp } from 'firebase/app';
 import { db, auth } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { EmailService } from '../../services/email';
 import emailjs from '@emailjs/browser';
+import { AdminApprovalService } from '../../services/adminApproval';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Textarea } from '../ui/textarea';
-import { CheckCircle, XCircle, Clock, User, Store, Car, Mail, Phone, MapPin, Calendar, Trash2 } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, User, Store, Car, Mail, Phone, MapPin, Calendar, Trash2, Users } from 'lucide-react';
 
 interface PartnerRequest {
   id: string;
@@ -23,6 +24,7 @@ interface PartnerRequest {
   restaurantName?: string;
   ownerName?: string;
   cuisine?: string;
+  category?: string;
   description?: string;
   experience?: string;
   website?: string;
@@ -39,6 +41,39 @@ interface PartnerRequest {
   phone: string;
   address: string;
   password?: string; // Password provided during signup
+  adminNotes?: string;
+  processedAt?: any;
+  processedBy?: string;
+}
+
+interface UserPartnerApplication {
+  id: string;
+  type: 'restaurant_owner' | 'delivery_rider';
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: any;
+  userId: string;
+  userEmail: string;
+  userName: string;
+
+  // Restaurant fields
+  restaurantName?: string;
+  cuisine?: string;
+  category?: string;
+  description?: string;
+  experience?: string;
+  website?: string;
+
+  // Driver fields
+  fullName?: string;
+  dateOfBirth?: string;
+  licenseNumber?: string;
+  availability?: string;
+  emergencyContact?: string;
+  emergencyPhone?: string;
+
+  // Common fields
+  phone: string;
+  address: string;
   adminNotes?: string;
   processedAt?: any;
   processedBy?: string;
@@ -66,10 +101,13 @@ const createAdminApp = () => {
 export const PartnerRequestManagement: React.FC = () => {
   const { user: currentAdmin } = useAuth();
   const [requests, setRequests] = useState<PartnerRequest[]>([]);
+  const [userApplications, setUserApplications] = useState<UserPartnerApplication[]>([]);
+  const [activeTab, setActiveTab] = useState<'legacy' | 'user-applications'>('user-applications');
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [adminNotes, setAdminNotes] = useState<{ [key: string]: string }>({});
   const [testEmailSending, setTestEmailSending] = useState(false);
+  const [checkingUser, setCheckingUser] = useState<string | null>(null);
 
 
 
@@ -119,6 +157,130 @@ export const PartnerRequestManagement: React.FC = () => {
     };
   }, []);
 
+  // Load user partner applications from new collections structure
+  useEffect(() => {
+    console.log('🔄 Setting up user partner applications listeners...');
+
+    const applications: UserPartnerApplication[] = [];
+    let loadedCollections = 0;
+    const totalCollections = 2;
+
+    const updateApplications = () => {
+      console.log('✅ All user applications loaded:', applications.length);
+      setUserApplications([...applications]);
+    };
+
+    const checkComplete = () => {
+      loadedCollections++;
+      if (loadedCollections === totalCollections) {
+        updateApplications();
+      }
+    };
+
+    // Listen to restaurant applications
+    const restaurantQuery = query(
+      collection(db, 'restaurantApplications'),
+      orderBy('submittedAt', 'desc')
+    );
+
+    const unsubscribeRestaurant = onSnapshot(restaurantQuery, (querySnapshot) => {
+      console.log('📊 Restaurant applications snapshot received, size:', querySnapshot.size);
+
+      // Remove existing restaurant applications and add new ones
+      const filteredApps = applications.filter(app => app.type !== 'restaurant_owner');
+      applications.length = 0;
+      applications.push(...filteredApps);
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        applications.push({
+          id: doc.id,
+          type: 'restaurant_owner',
+          status: data.status || 'pending',
+          submittedAt: data.submittedAt,
+          userId: data.userId,
+          userEmail: data.userEmail,
+          userName: data.userName,
+          restaurantName: data.restaurantName,
+          cuisine: data.cuisine,
+          category: data.category,
+          description: data.description,
+          experience: data.experience,
+          website: data.website,
+          phone: data.phone,
+          address: data.address,
+          adminNotes: data.adminNotes,
+          processedAt: data.processedAt,
+          processedBy: data.processedBy
+        } as UserPartnerApplication);
+      });
+
+      if (loadedCollections === totalCollections) {
+        updateApplications();
+      } else {
+        checkComplete();
+      }
+    }, (error) => {
+      console.error('❌ Error loading restaurant applications:', error);
+      checkComplete();
+    });
+
+    // Listen to delivery applications
+    const deliveryQuery = query(
+      collection(db, 'deliveryApplications'),
+      orderBy('submittedAt', 'desc')
+    );
+
+    const unsubscribeDelivery = onSnapshot(deliveryQuery, (querySnapshot) => {
+      console.log('📊 Delivery applications snapshot received, size:', querySnapshot.size);
+
+      // Remove existing delivery applications and add new ones
+      const filteredApps = applications.filter(app => app.type !== 'delivery_rider');
+      applications.length = 0;
+      applications.push(...filteredApps);
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        applications.push({
+          id: doc.id,
+          type: 'delivery_rider',
+          status: data.status || 'pending',
+          submittedAt: data.submittedAt,
+          userId: data.userId,
+          userEmail: data.userEmail,
+          userName: data.userName,
+          fullName: data.fullName,
+          dateOfBirth: data.dateOfBirth,
+          licenseNumber: data.licenseNumber,
+          experience: data.experience,
+          availability: data.availability,
+          emergencyContact: data.emergencyContact,
+          emergencyPhone: data.emergencyPhone,
+          phone: data.phone,
+          address: data.address,
+          adminNotes: data.adminNotes,
+          processedAt: data.processedAt,
+          processedBy: data.processedBy
+        } as UserPartnerApplication);
+      });
+
+      if (loadedCollections === totalCollections) {
+        updateApplications();
+      } else {
+        checkComplete();
+      }
+    }, (error) => {
+      console.error('❌ Error loading delivery applications:', error);
+      checkComplete();
+    });
+
+    return () => {
+      console.log('🧹 Cleaning up user applications listeners');
+      unsubscribeRestaurant();
+      unsubscribeDelivery();
+    };
+  }, []);
+
   const handleApprove = async (request: PartnerRequest) => {
     console.log('🚀 Starting approval process for:', request.email);
     setProcessingId(request.id);
@@ -150,6 +312,7 @@ export const PartnerRequestManagement: React.FC = () => {
         ...(request.type === 'restaurant_owner' && {
           restaurantName: request.restaurantName,
           cuisine: request.cuisine,
+          category: request.category,
           description: request.description,
           experience: request.experience,
           website: request.website
@@ -251,6 +414,46 @@ Best regards, The Grubz Team`;
     }
   };
 
+  // Diagnostic function to check user document status
+  const checkUserDocument = async (application: UserPartnerApplication) => {
+    setCheckingUser(application.id);
+    try {
+      console.log('🔍 Checking user document for:', application.userEmail);
+
+      const userRef = doc(db, 'users', application.userId);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        alert(
+          `✅ User Document Found!\n\n` +
+          `User ID: ${application.userId}\n` +
+          `Email: ${userData.email}\n` +
+          `Name: ${userData.name}\n` +
+          `Role: ${userData.role}\n` +
+          `Created: ${userData.createdAt?.toDate?.() || 'Unknown'}\n\n` +
+          `The user document exists and the application can be approved.`
+        );
+      } else {
+        alert(
+          `❌ User Document NOT Found!\n\n` +
+          `User ID: ${application.userId}\n` +
+          `Email: ${application.userEmail}\n\n` +
+          `This is why the approval is failing. The user document is missing from the 'users' collection.\n\n` +
+          `Possible solutions:\n` +
+          `1. Try approving - the system will offer to create the user document\n` +
+          `2. Ask the user to sign up again\n` +
+          `3. Manually create the user document`
+        );
+      }
+    } catch (error: any) {
+      console.error('❌ Error checking user document:', error);
+      alert(`❌ Error checking user document: ${error.message}`);
+    } finally {
+      setCheckingUser(null);
+    }
+  };
+
   const handleReject = async (request: PartnerRequest) => {
     setProcessingId(request.id);
     try {
@@ -296,6 +499,181 @@ Best regards, The Grubz Team`;
       
     } catch (error) {
       console.error('Error rejecting request:', error);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // Handler for approving user applications (existing users applying for partner roles)
+  const handleUserApplicationApprove = async (application: UserPartnerApplication) => {
+    console.log('🚀 Starting user application approval for:', application.userEmail);
+    console.log('🔍 Application details:', application);
+    setProcessingId(application.id);
+    try {
+      // Use the new AdminApprovalService
+      if (application.type === 'restaurant_owner') {
+        await AdminApprovalService.approveRestaurantApplication(
+          application.userId,
+          currentAdmin?.id || 'admin',
+          adminNotes[application.id] || ''
+        );
+      } else if (application.type === 'delivery_rider') {
+        await AdminApprovalService.approveDeliveryApplication(
+          application.userId,
+          currentAdmin?.id || 'admin',
+          adminNotes[application.id] || ''
+        );
+      }
+
+      console.log('✅ User application approved using AdminApprovalService');
+
+      // Send approval email
+      console.log('📧 Sending approval email...');
+      const emailSent = await EmailService.sendApprovalEmail(
+        application.userEmail,
+        application.userName,
+        application.type,
+        { email: application.userEmail, password: 'Use your existing password' }
+      );
+
+      if (emailSent) {
+        console.log('✅ Approval email sent successfully to:', application.userEmail);
+        const roleDisplayName = application.type === 'restaurant_owner' ? 'Restaurant Partner' : 'Delivery Driver';
+        const dashboardUrl = application.type === 'restaurant_owner'
+          ? `${window.location.origin}/restaurant`
+          : `${window.location.origin}/delivery`;
+
+        alert(`✅ SUCCESS!\n\n📧 Approval Email Sent to: ${application.userEmail}\n\nSubject: 🎉 Your ${roleDisplayName} Application Has Been Approved!\n\n✅ User role updated\n✅ Email notification sent\n✅ User can now access partner dashboard\n\nDashboard: ${dashboardUrl}`);
+      } else {
+        console.warn('⚠️ Failed to send approval email, but user role was updated');
+        alert('✅ Application approved and user role updated successfully!\n⚠️ Email notification failed - please contact the user manually.');
+      }
+
+      console.log('✅ User Application Approved:', {
+        email: application.userEmail,
+        name: application.userName,
+        type: application.type,
+        message: 'User role updated. User can now access partner dashboard.',
+        emailSent: emailSent
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error approving user application:', error);
+
+      // Provide specific error handling for missing user document
+      if (error.message && error.message.includes('User document not found')) {
+        const shouldCreateUser = confirm(
+          `❌ User document not found!\n\n` +
+          `User ID: ${application.userId}\n` +
+          `Email: ${application.userEmail}\n\n` +
+          `This usually happens when:\n` +
+          `• The user was deleted from the database\n` +
+          `• The user ID is incorrect\n` +
+          `• The user signed up but their document wasn't created properly\n\n` +
+          `Would you like to create a new user document for this application?\n\n` +
+          `Click OK to create user document, or Cancel to reject the application.`
+        );
+
+        if (shouldCreateUser) {
+          try {
+            // Create a new user document
+            await setDoc(doc(db, 'users', application.userId), {
+              id: application.userId,
+              email: application.userEmail,
+              name: application.userName,
+              role: application.type,
+              phone: '',
+              address: '',
+              emailVerified: true, // Assume verified since they could apply
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              // Add specific fields based on type
+              ...(application.type === 'restaurant_owner' && {
+                restaurantName: application.restaurantName,
+                cuisine: application.cuisine,
+                category: application.category,
+                description: application.description,
+                experience: application.experience,
+                website: application.website
+              }),
+              ...(application.type === 'delivery_rider' && {
+                dateOfBirth: application.dateOfBirth,
+                licenseNumber: application.licenseNumber,
+                availability: application.availability,
+                emergencyContact: application.emergencyContact,
+                emergencyPhone: application.emergencyPhone
+              })
+            });
+
+            console.log('✅ User document created successfully');
+
+            // Update application status in the correct collection
+            const collectionName = application.type === 'restaurant_owner' ? 'restaurantApplications' : 'deliveryApplications';
+            await updateDoc(doc(db, collectionName, application.userId), {
+              status: 'approved',
+              processedAt: new Date(),
+              processedBy: currentAdmin?.id || 'admin',
+              adminNotes: `User document was missing and was recreated during approval. ${adminNotes[application.id] || ''}`
+            });
+
+            alert('✅ User document created and application approved successfully!\n\nThe user can now login with their credentials.');
+            return; // Exit successfully
+          } catch (createError: any) {
+            console.error('❌ Error creating user document:', createError);
+            alert(`❌ Failed to create user document: ${createError.message}`);
+          }
+        }
+      }
+
+      alert(`❌ Error approving application: ${error.message || 'Unknown error'}\n\nPlease check the console for more details.`);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // Handler for rejecting user applications
+  const handleUserApplicationReject = async (application: UserPartnerApplication) => {
+    setProcessingId(application.id);
+    try {
+      // Use the new AdminApprovalService
+      await AdminApprovalService.rejectApplication(
+        application.userId,
+        application.type,
+        currentAdmin?.id || 'admin',
+        adminNotes[application.id] || 'Application rejected by admin'
+      );
+
+      // Send rejection email
+      const rejectionReason = adminNotes[application.id] || 'Application did not meet our current requirements';
+
+      console.log('📧 Sending rejection email...');
+      const emailSent = await EmailService.sendRejectionEmail(
+        application.userEmail,
+        application.userName,
+        application.type,
+        rejectionReason
+      );
+
+      if (emailSent) {
+        console.log('✅ Rejection email sent successfully to:', application.userEmail);
+        const roleDisplayName = application.type === 'restaurant_owner' ? 'Restaurant Partner' : 'Delivery Driver';
+        alert(`📧 Rejection Email Sent!\n\nTo: ${application.userEmail}\nSubject: Update on Your ${roleDisplayName} Application\n\nReason: ${rejectionReason}\n\nThe user has been notified about the decision.`);
+      } else {
+        console.warn('⚠️ Failed to send rejection email');
+        alert('⚠️ Application rejected successfully, but email notification failed. Please contact the user manually.');
+      }
+
+      console.log('❌ User Application Rejected:', {
+        email: application.userEmail,
+        name: application.userName,
+        type: application.type,
+        reason: rejectionReason,
+        message: 'User application rejected. Notification sent via email.',
+        emailSent: emailSent
+      });
+
+    } catch (error) {
+      console.error('Error rejecting user application:', error);
     } finally {
       setProcessingId(null);
     }
@@ -481,7 +859,7 @@ Best regards, The Grubz Team`;
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Partner Requests</h2>
+        <h2 className="text-2xl font-bold">Partner Applications</h2>
         <div className="flex items-center gap-4">
           <Button
             onClick={testEmailConfiguration}
@@ -499,31 +877,257 @@ Best regards, The Grubz Team`;
           >
             📧 Test Multiple Emails
           </Button>
-          <div className="flex gap-4 text-sm text-gray-600">
-            <span>Total: {requests.length}</span>
-            <span>Pending: {requests.filter(r => r.status === 'pending').length}</span>
-            <span>Approved: {requests.filter(r => r.status === 'approved').length}</span>
-            <span>Rejected: {requests.filter(r => r.status === 'rejected').length}</span>
-          </div>
         </div>
       </div>
 
-      {requests.length === 0 ? (
-        <Card className="p-12">
-          <div className="text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <User className="w-8 h-8 text-gray-400" />
+      {/* Tab Navigation */}
+      <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setActiveTab('user-applications')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
+            activeTab === 'user-applications'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          User Applications ({userApplications.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('legacy')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
+            activeTab === 'legacy'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <User className="w-4 h-4" />
+          Legacy Requests ({requests.length})
+        </button>
+      </div>
+
+      {/* Statistics */}
+      <div className="grid grid-cols-4 gap-4">
+        {activeTab === 'user-applications' ? (
+          <>
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-2xl font-bold text-gray-900">{userApplications.length}</div>
+              <div className="text-sm text-gray-600">Total Applications</div>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Partner Requests</h3>
-            <p className="text-gray-600 mb-4">
-              There are currently no partner or driver applications to review.
-            </p>
-            <p className="text-sm text-gray-500">
-              New applications will appear here when users submit partner or driver signup forms.
-            </p>
-          </div>
-        </Card>
-      ) : (
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-2xl font-bold text-yellow-600">{userApplications.filter(a => a.status === 'pending').length}</div>
+              <div className="text-sm text-gray-600">Pending</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-2xl font-bold text-green-600">{userApplications.filter(a => a.status === 'approved').length}</div>
+              <div className="text-sm text-gray-600">Approved</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-2xl font-bold text-red-600">{userApplications.filter(a => a.status === 'rejected').length}</div>
+              <div className="text-sm text-gray-600">Rejected</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-2xl font-bold text-gray-900">{requests.length}</div>
+              <div className="text-sm text-gray-600">Total Requests</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-2xl font-bold text-yellow-600">{requests.filter(r => r.status === 'pending').length}</div>
+              <div className="text-sm text-gray-600">Pending</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-2xl font-bold text-green-600">{requests.filter(r => r.status === 'approved').length}</div>
+              <div className="text-sm text-gray-600">Approved</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-2xl font-bold text-red-600">{requests.filter(r => r.status === 'rejected').length}</div>
+              <div className="text-sm text-gray-600">Rejected</div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* User Applications Tab */}
+      {activeTab === 'user-applications' && (
+        <>
+          {userApplications.length === 0 ? (
+            <Card className="p-12">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Users className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No User Applications</h3>
+                <p className="text-gray-600 mb-4">
+                  There are currently no partner applications from existing users to review.
+                </p>
+                <p className="text-sm text-gray-500">
+                  New applications will appear here when users apply for partner roles from their customer dashboard.
+                </p>
+              </div>
+            </Card>
+          ) : (
+            <div className="grid gap-6">
+              {userApplications.map((application) => (
+                <Card key={application.id} className="overflow-hidden">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {getTypeIcon(application.type)}
+                        <div>
+                          <CardTitle className="text-lg">
+                            {application.type === 'restaurant_owner' ? application.restaurantName : application.userName}
+                          </CardTitle>
+                          <p className="text-sm text-gray-600">{getTypeName(application.type)} - Existing User</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {getStatusBadge(application.status)}
+                        <span className="text-sm text-gray-500">
+                          {application.submittedAt?.toDate?.()?.toLocaleDateString() || 'Unknown date'}
+                        </span>
+                      </div>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-4">
+                    {/* Contact Information */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-4 h-4 text-gray-400" />
+                        <span>{application.userEmail}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4 text-gray-400" />
+                        <span>{application.userName}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-gray-400" />
+                        <span>{application.phone}</span>
+                      </div>
+                    </div>
+
+                    {/* Application Details */}
+                    {application.type === 'restaurant_owner' ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium">Restaurant:</span> {application.restaurantName}
+                        </div>
+                        <div>
+                          <span className="font-medium">Cuisine:</span> {application.cuisine}
+                        </div>
+                        <div>
+                          <span className="font-medium">Category:</span> {application.category}
+                        </div>
+                        <div>
+                          <span className="font-medium">Experience:</span> {application.experience}
+                        </div>
+                        {application.website && (
+                          <div>
+                            <span className="font-medium">Website:</span> {application.website}
+                          </div>
+                        )}
+                        <div className="md:col-span-2">
+                          <span className="font-medium">Description:</span> {application.description}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium">License:</span> {application.licenseNumber}
+                        </div>
+                        <div>
+                          <span className="font-medium">Experience:</span> {application.experience}
+                        </div>
+                        <div>
+                          <span className="font-medium">Availability:</span> {application.availability}
+                        </div>
+                        <div>
+                          <span className="font-medium">Emergency Contact:</span> {application.emergencyContact} ({application.emergencyPhone})
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Admin Actions for Pending Applications */}
+                    {application.status === 'pending' && (
+                      <div className="border-t pt-4 space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Admin Notes (optional)</label>
+                          <Textarea
+                            value={adminNotes[application.id] || ''}
+                            onChange={(e) => setAdminNotes(prev => ({ ...prev, [application.id]: e.target.value }))}
+                            placeholder="Add any notes about this application..."
+                            rows={2}
+                          />
+                        </div>
+                        <div className="flex gap-3 flex-wrap">
+                          <Button
+                            onClick={() => checkUserDocument(application)}
+                            disabled={checkingUser === application.id}
+                            variant="outline"
+                            className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                          >
+                            <User className="w-4 h-4 mr-2" />
+                            {checkingUser === application.id ? 'Checking...' : 'Check User'}
+                          </Button>
+                          <Button
+                            onClick={() => handleUserApplicationApprove(application)}
+                            disabled={processingId === application.id}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            {processingId === application.id ? 'Processing...' : 'Approve & Update Role'}
+                          </Button>
+                          <Button
+                            onClick={() => handleUserApplicationReject(application)}
+                            disabled={processingId === application.id}
+                            variant="outline"
+                            className="border-red-300 text-red-700 hover:bg-red-50"
+                          >
+                            <XCircle className="w-4 h-4 mr-2" />
+                            {processingId === application.id ? 'Processing...' : 'Reject'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Show admin notes for processed applications */}
+                    {application.status !== 'pending' && application.adminNotes && (
+                      <div className="border-t pt-4">
+                        <div className="bg-gray-50 p-3 rounded-lg">
+                          <p className="text-sm font-medium text-gray-700">Admin Notes:</p>
+                          <p className="text-sm text-gray-600">{application.adminNotes}</p>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Legacy Requests Tab */}
+      {activeTab === 'legacy' && (
+        <>
+          {requests.length === 0 ? (
+            <Card className="p-12">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <User className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Legacy Requests</h3>
+                <p className="text-gray-600 mb-4">
+                  There are currently no legacy partner or driver applications to review.
+                </p>
+                <p className="text-sm text-gray-500">
+                  These are applications from the old signup system where users applied directly for partner roles.
+                </p>
+              </div>
+            </Card>
+          ) : (
         <div className="grid gap-6">
           {requests.map((request) => (
             <Card key={request.id} className="overflow-hidden">
@@ -569,6 +1173,7 @@ Best regards, The Grubz Team`;
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-orange-50 p-3 rounded-lg">
                   <div><strong>Owner:</strong> {request.ownerName}</div>
                   <div><strong>Cuisine:</strong> {request.cuisine}</div>
+                  <div><strong>Category:</strong> {request.category}</div>
                   <div><strong>Experience:</strong> {request.experience}</div>
                   {request.website && <div><strong>Website:</strong> {request.website}</div>}
                   {request.description && (
@@ -660,7 +1265,9 @@ Best regards, The Grubz Team`;
             </CardContent>
           </Card>
           ))}
-        </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

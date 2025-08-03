@@ -45,18 +45,21 @@ export const FooterSection = (): JSX.Element => {
             {/* Partner Signup Options */}
             <div className="pt-4 border-t border-gray-700">
               <p className="text-sm text-gray-400 mb-3">Looking to partner with us?</p>
+              <p className="text-xs text-gray-500 mb-3">
+                ⚠️ Partner applications require admin approval (2-3 business days)
+              </p>
               <div className="space-y-2">
                 <button
-                  onClick={() => navigate('/partner-signup')}
+                  onClick={() => navigate('/apply/restaurant')}
                   className="block text-sm text-[#dd3333] hover:text-[#ff4444] transition-colors font-medium"
                 >
-                  Restaurant Partner Signup
+                  Apply as Restaurant Owner
                 </button>
                 <button
-                  onClick={() => navigate('/driver-signup')}
+                  onClick={() => navigate('/apply/delivery')}
                   className="block text-sm text-[#dd3333] hover:text-[#ff4444] transition-colors font-medium"
                 >
-                  Driver Partner Signup
+                  Apply as Delivery Driver
                 </button>
               </div>
             </div>

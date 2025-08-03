@@ -28,56 +28,7 @@ export const BrowseFood: React.FC = () => {
     { id: 'healthy', name: 'Healthy', count: 9 }
   ];
 
-  const restaurants = [
-    {
-      id: 1,
-      name: "Mario's Italian Kitchen",
-      cuisine: 'Italian',
-      rating: 4.8,
-      deliveryTime: '25-35 min',
-      deliveryFee: 2.99,
-      distance: '1.2 km',
-      image: '🍕',
-      popular: true,
-      items: [
-        { id: 1, name: 'Margherita Pizza', price: 12.99, description: 'Fresh tomatoes, mozzarella, basil' },
-        { id: 2, name: 'Pepperoni Pizza', price: 14.99, description: 'Pepperoni, mozzarella, tomato sauce' },
-        { id: 3, name: 'Caesar Salad', price: 8.99, description: 'Romaine lettuce, parmesan, croutons' }
-      ]
-    },
-    {
-      id: 2,
-      name: "Burger Palace",
-      cuisine: 'American',
-      rating: 4.6,
-      deliveryTime: '20-30 min',
-      deliveryFee: 1.99,
-      distance: '0.8 km',
-      image: '🍔',
-      popular: false,
-      items: [
-        { id: 4, name: 'Classic Burger', price: 9.99, description: 'Beef patty, lettuce, tomato, onion' },
-        { id: 5, name: 'Cheese Burger', price: 11.99, description: 'Beef patty, cheese, lettuce, tomato' },
-        { id: 6, name: 'Chicken Wings', price: 7.99, description: 'Crispy wings with buffalo sauce' }
-      ]
-    },
-    {
-      id: 3,
-      name: "Sushi Express",
-      cuisine: 'Japanese',
-      rating: 4.9,
-      deliveryTime: '30-40 min',
-      deliveryFee: 3.99,
-      distance: '2.1 km',
-      image: '🍣',
-      popular: true,
-      items: [
-        { id: 7, name: 'Salmon Roll', price: 8.99, description: 'Fresh salmon, avocado, cucumber' },
-        { id: 8, name: 'Tuna Sashimi', price: 12.99, description: 'Fresh tuna slices' },
-        { id: 9, name: 'Miso Soup', price: 3.99, description: 'Traditional miso soup with tofu' }
-      ]
-    }
-  ];
+  const [restaurants, setRestaurants] = useState<any[]>([]);
 
   const addToCart = (itemId: number) => {
     setCartItems(prev => ({
@@ -89,10 +40,10 @@ export const BrowseFood: React.FC = () => {
   const getCartTotal = () => {
     let total = 0;
     let count = 0;
-    restaurants.forEach(restaurant => {
-      restaurant.items.forEach(item => {
+    (restaurants || []).forEach(restaurant => {
+      (restaurant.items || []).forEach(item => {
         const quantity = cartItems[item.id] || 0;
-        total += item.price * quantity;
+        total += (item.price || 0) * quantity;
         count += quantity;
       });
     });
@@ -152,7 +103,7 @@ export const BrowseFood: React.FC = () => {
 
       {/* Restaurants */}
       <div className="space-y-6">
-        {restaurants.map((restaurant) => (
+        {(restaurants || []).map((restaurant) => (
           <Card key={restaurant.id} className="overflow-hidden">
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between">
@@ -192,7 +143,7 @@ export const BrowseFood: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {restaurant.items.map((item) => (
+                {(restaurant.items || []).map((item) => (
                   <div key={item.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
                     <div className="flex justify-between items-start mb-2">
                       <h4 className="font-medium text-gray-900">{item.name}</h4>

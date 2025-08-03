@@ -65,51 +65,35 @@ VITE_FIREBASE_MEASUREMENT_ID=your-actual-measurement-id
 
 1. In your Firebase project console, go to "Firestore Database"
 2. Click on the "Rules" tab
-3. Replace the default rules with these basic rules:
+3. Replace the default rules with the comprehensive CRUD rules from `firestore.rules` file:
 
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Users can read and write their own user document
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // Admins can read and write all documents
-    match /{document=**} {
-      allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    
-    // Restaurant owners can read and write their own restaurant data
-    match /restaurants/{restaurantId} {
-      allow read: if true; // Public read for browsing
-      allow write: if request.auth != null && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'restaurant_owner' ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
-    }
-    
-    // Orders can be read by the customer, restaurant, or driver involved
-    match /orders/{orderId} {
-      allow read, write: if request.auth != null && 
-        (resource.data.userId == request.auth.uid ||
-         resource.data.restaurantId == request.auth.uid ||
-         resource.data.driverId == request.auth.uid ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
-    }
-    
-    // Drivers can read and write their own driver data
-    match /drivers/{driverId} {
-      allow read, write: if request.auth != null && 
-        (request.auth.uid == driverId ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
-    }
-  }
-}
-```
+**IMPORTANT**: Copy the contents of the `firestore.rules` file in your project root and paste them into the Firebase console.
 
-4. Click "Publish"
+The rules include:
+- **Admin Full Access**: Admins can perform all CRUD operations on any collection
+- **User Management**: Users can read/update their own data, only admins can delete users
+- **Restaurant Management**: Public read, owner/admin write access
+- **Order Management**: Participants can read/write their orders
+- **Driver Management**: Drivers manage their profiles, admins have full access
+- **Partner Requests**: Users create, admins approve/deny
+- **Audit Logs**: Admin-only access for tracking changes
+- **Enhanced Security**: Role-based permissions with proper validation
+
+4. Click "Publish" to apply the rules
+
+## Step 6.1: Verify Firebase Rules
+
+After setting up the rules, test them using the admin dashboard:
+
+1. Login as admin (`admin@grubz.com` / `password123`)
+2. Go to User Management
+3. Click "Test Firebase" button to verify permissions
+4. Try creating, reading, updating, and deleting users
+
+If the test fails, check:
+- Rules are properly published in Firebase console
+- Admin user has correct role in Firestore
+- No syntax errors in the rules
 
 ## Step 7: Test Your Setup
 

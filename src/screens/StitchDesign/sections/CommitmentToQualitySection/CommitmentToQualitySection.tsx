@@ -2,24 +2,41 @@ import { SearchIcon, ShoppingCartIcon } from "lucide-react";
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../../../../components/ui/button";
-import {
-  NavigationMenu,
-  NavigationMenuItem,
-  NavigationMenuLink,
-  NavigationMenuList,
-} from "../../../../components/ui/navigation-menu";
 import { useAuth } from "../../../../contexts/AuthContext";
 
 export const CommitmentToQualitySection = (): JSX.Element => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { currentUser, logout } = useAuth();
 
   // Navigation menu items data
   const menuItems = [
-    { label: "Menu", href: "#" },
-    { label: "Restaurants", href: "#" },
-    { label: "About Us", href: "#" },
-    { label: "Contact", href: "#" },
+    {
+      label: "Restaurants",
+      action: () => {
+        const element = document.getElementById('restaurants');
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    },
+    {
+      label: "About Us",
+      action: () => {
+        const element = document.getElementById('about');
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    },
+    {
+      label: "Contact",
+      action: () => {
+        const element = document.getElementById('contact');
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    },
   ];
 
   const handleLoginClick = () => {
@@ -46,8 +63,8 @@ export const CommitmentToQualitySection = (): JSX.Element => {
   };
 
   const handleDashboardClick = () => {
-    if (user) {
-      navigate(getRedirectPath(user.role));
+    if (currentUser) {
+      navigate(getRedirectPath(currentUser.role));
     }
   };
 
@@ -71,20 +88,18 @@ export const CommitmentToQualitySection = (): JSX.Element => {
       {/* Navigation and Action Buttons */}
       <div className="flex items-center justify-end gap-8 flex-1">
         {/* Navigation Menu */}
-        <NavigationMenu>
-          <NavigationMenuList className="flex gap-9">
-            {menuItems.map((item, index) => (
-              <NavigationMenuItem key={index}>
-                <NavigationMenuLink
-                  href={item.href}
-                  className="font-medium text-sm text-[#190c0c] [font-family:'Plus_Jakarta_Sans',Helvetica]"
-                >
-                  {item.label}
-                </NavigationMenuLink>
-              </NavigationMenuItem>
-            ))}
-          </NavigationMenuList>
-        </NavigationMenu>
+        <div className="flex gap-9">
+          {menuItems.map((item, index) => (
+            <Button
+              key={index}
+              variant="ghost"
+              onClick={item.action}
+              className="font-medium text-sm text-[#190c0c] [font-family:'Plus_Jakarta_Sans',Helvetica] hover:bg-gray-100 px-3 py-2"
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
@@ -104,9 +119,9 @@ export const CommitmentToQualitySection = (): JSX.Element => {
           </Button>
           
           {/* Authentication Buttons */}
-          {user ? (
+          {currentUser ? (
             <div className="flex items-center gap-3 ml-4">
-              <span className="text-sm text-gray-600">Welcome, {user.name}</span>
+              <span className="text-sm text-gray-600">Welcome, {currentUser.name}</span>
               <Button
                 onClick={handleDashboardClick}
                 className="bg-[#dd3333] hover:bg-[#c52e2e] text-white px-4 py-2 rounded-lg text-sm font-medium"

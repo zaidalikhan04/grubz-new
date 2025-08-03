@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { CustomerLayout } from '../components/customer/CustomerLayout';
 import { CustomerHome } from '../components/customer/CustomerHome';
 import { CustomerOrders } from '../components/customer/CustomerOrders';
+
 import { CustomerFavorites } from '../components/customer/CustomerFavorites';
 import { CustomerSettings } from '../components/customer/CustomerSettings';
 import { CustomerProfile } from '../components/customer/CustomerProfile';
+
 
 export const CustomerDashboard: React.FC = () => {
   const [currentPage, setCurrentPage] = useState('home');

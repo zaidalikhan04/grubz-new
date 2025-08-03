@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { auth, db } from '../config/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+// import { initializeMenuData } from '../utils/initializeMenuData';
 
 export const FirebaseTest: React.FC = () => {
   const [status, setStatus] = useState<string>('Testing Firebase connection...');
@@ -50,6 +51,10 @@ export const FirebaseTest: React.FC = () => {
           updatedAt: new Date()
         });
         
+        // Test 4: Initialize default menu data
+        setStatus('Initializing default menu data...');
+        // await initializeMenuData();
+
         setStatus('✅ All tests passed! You can now login with admin@grubz.com / password123');
       } catch (authError: any) {
         if (authError.code === 'auth/email-already-in-use') {

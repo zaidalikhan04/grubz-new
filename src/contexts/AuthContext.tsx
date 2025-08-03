@@ -1,237 +1,172 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
+import { onSnapshot, doc } from 'firebase/firestore';
+import { auth, db } from '../config/firebase';
 import { AuthService, UserData } from '../services/auth';
 
-export type UserRole = 'admin' | 'customer' | 'restaurant_owner' | 'delivery_rider';
-
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-  phone?: string;
-  address?: string;
-}
-
 interface AuthContextType {
-  user: User | null;
-  firebaseUser: FirebaseUser | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  signup: (email: string, password: string, name: string, role: UserRole, phone?: string, address?: string) => Promise<boolean>;
-  registerCustomer: (email: string, password: string, name: string, phone?: string, address?: string) => Promise<boolean>;
-  logout: () => void;
-  updateProfile: (userData: Partial<User>) => Promise<boolean>;
-  resetPassword: (email: string) => Promise<boolean>;
-  isLoading: boolean;
-  isAuthenticated: boolean;
+  currentUser: UserData | null;
+  user: UserData | null; // Alias for compatibility
+  loading: boolean;
+  isLoading: boolean; // Alias for compatibility
+  error: string | null;
+  login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  logout: () => Promise<void>;
+  register: (email: string, password: string, userData: Partial<UserData>) => Promise<void>;
+  updateProfile: (userData: Partial<UserData>) => Promise<void>;
+  resendEmailVerification: (email: string, password: string) => Promise<boolean>;
+  sendPasswordResetEmail: (email: string) => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  return useContext(AuthContext);
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Set a timeout to prevent infinite loading
-    const loadingTimeout = setTimeout(() => {
-      console.log('⚠️ Loading timeout reached, forcing loading to false');
-      setIsLoading(false);
-    }, 10000); // 10 second timeout
+    let unsubscribeSnapshot: (() => void) | null = null;
 
-    // Listen to Firebase auth state changes
-    const unsubscribe = AuthService.onAuthStateChange(async (firebaseUser) => {
-      console.log('🔄 Auth state change:', firebaseUser ? `User signed in: ${firebaseUser.email}` : 'User signed out');
-      setFirebaseUser(firebaseUser);
-
-      if (firebaseUser) {
-        // User is signed in, get user data from Firestore
-        try {
-          console.log('🔄 Fetching user data from Firestore for UID:', firebaseUser.uid);
-          const userData = await AuthService.getUserData(firebaseUser.uid);
-          if (userData) {
-            console.log('✅ User data loaded:', userData);
-            setUser(userData as User);
-            setIsAuthenticated(true);
-            console.log('✅ User state updated successfully');
-          } else {
-            // User exists in Firebase Auth but not in Firestore
-            console.error('❌ User data not found in Firestore for:', firebaseUser.email);
-            console.log('🔄 Creating fallback user data...');
-
-            // Create a fallback user object for testing
-            const fallbackUser: User = {
-              id: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              name: firebaseUser.displayName || 'Customer',
-              role: 'customer',
-              phone: '',
-              address: ''
-            };
-
-            console.log('✅ Using fallback user data:', fallbackUser);
-            setUser(fallbackUser);
-            setIsAuthenticated(true);
-          }
-        } catch (error) {
-          console.error('❌ Error fetching user data:', error);
-          setUser(null);
-          setIsAuthenticated(false);
-        }
-      } else {
-        // User is signed out
-        console.log('👋 User signed out');
-        setUser(null);
-        setIsAuthenticated(false);
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      // Clean up any existing snapshot listener
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+        unsubscribeSnapshot = null;
       }
 
-      console.log('🔄 Auth state processing complete, setting loading to false');
-      clearTimeout(loadingTimeout);
-      setIsLoading(false);
+      if (user) {
+        console.log('🔄 User authenticated, setting up profile listener for:', user.uid);
+        // Set up real-time listener for user profile
+        unsubscribeSnapshot = onSnapshot(
+          doc(db, 'users', user.uid),
+          (doc) => {
+            console.log('📄 Profile document snapshot:', doc.exists(), doc.data());
+            if (doc.exists()) {
+              setCurrentUser({ id: doc.id, ...doc.data() } as UserData);
+            } else {
+              console.log('⚠️ User document does not exist, user needs to complete registration');
+              setCurrentUser(null);
+            }
+            setLoading(false);
+          },
+          (error) => {
+            console.error('❌ Error in profile snapshot:', error);
+            setError('Error loading user profile');
+            setLoading(false);
+          }
+        );
+      } else {
+        console.log('🚪 User not authenticated');
+        setCurrentUser(null);
+        setLoading(false);
+      }
     });
 
-    // Create default admin user and test customer on first load
-    AuthService.createDefaultAdmin().catch(console.error);
-    AuthService.createTestCustomer().catch(console.error);
-
-    // Cleanup subscription and timeout on unmount
     return () => {
-      clearTimeout(loadingTimeout);
-      unsubscribe();
+      unsubscribeAuth();
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+      }
     };
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    setIsLoading(true);
-    console.log('🔄 Starting login for:', email);
-
+  const login = async (email: string, password: string) => {
     try {
+      setError(null);
       const userData = await AuthService.login(email, password);
-      console.log('✅ Login successful, user data:', userData);
-      // User state will be updated automatically by the auth state listener
-      setIsLoading(false);
-      return true;
+      setCurrentUser(userData);
     } catch (error) {
-      console.error('❌ Login error:', error);
-      setIsLoading(false);
-      return false;
+      setError(error instanceof Error ? error.message : 'Failed to login');
+      throw error;
     }
   };
 
-  const signup = async (
-    email: string,
-    password: string,
-    name: string,
-    role: UserRole,
-    phone?: string,
-    address?: string
-  ): Promise<boolean> => {
-    setIsLoading(true);
-
+  const loginWithGoogle = async () => {
     try {
-      const userData = await AuthService.register(email, password, {
-        name,
-        role,
-        phone,
-        address
-      });
-      // User state will be updated automatically by the auth state listener
-      setIsLoading(false);
-      return true;
+      setError(null);
+      const userData = await AuthService.loginWithGoogle();
+      setCurrentUser(userData);
     } catch (error) {
-      console.error('Signup error:', error);
-      setIsLoading(false);
-      return false;
-    }
-  };
-
-  const registerCustomer = async (
-    email: string,
-    password: string,
-    name: string,
-    phone?: string,
-    address?: string
-  ): Promise<boolean> => {
-    setIsLoading(true);
-    console.log('🔄 Starting customer registration for:', email);
-
-    try {
-      const userData = await AuthService.registerWithoutLogin(email, password, {
-        name,
-        role: 'customer',
-        phone,
-        address
-      });
-      console.log('✅ Customer registration successful:', userData);
-      // User is signed out after registration, so no auth state change
-      setIsLoading(false);
-      return true;
-    } catch (error) {
-      console.error('❌ Customer registration error:', error);
-      setIsLoading(false);
-      return false;
+      setError(error instanceof Error ? error.message : 'Failed to login with Google');
+      throw error;
     }
   };
 
   const logout = async () => {
     try {
+      setError(null);
       await AuthService.logout();
-      // User state will be updated automatically by the auth state listener
+      setCurrentUser(null);
     } catch (error) {
-      console.error('Logout error:', error);
+      setError(error instanceof Error ? error.message : 'Failed to logout');
+      throw error;
     }
   };
 
-  const updateProfile = async (userData: Partial<User>): Promise<boolean> => {
+  const register = async (email: string, password: string, userData: Partial<UserData>) => {
     try {
+      setError(null);
+      await AuthService.register(email, password, userData);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to register');
+      throw error;
+    }
+  };
+
+  const updateProfile = async (userData: Partial<UserData>) => {
+    try {
+      setError(null);
       await AuthService.updateUserProfile(userData);
-      // Update local user state
-      if (user) {
-        setUser({ ...user, ...userData });
-      }
-      return true;
     } catch (error) {
-      console.error('Update profile error:', error);
-      return false;
+      setError(error instanceof Error ? error.message : 'Failed to update profile');
+      throw error;
     }
   };
 
-  const resetPassword = async (email: string): Promise<boolean> => {
+  const resendEmailVerification = async (email: string, password: string) => {
     try {
-      await AuthService.resetPassword(email);
-      return true;
+      setError(null);
+      return await AuthService.resendEmailVerification(email, password);
     } catch (error) {
-      console.error('Reset password error:', error);
-      return false;
+      setError(error instanceof Error ? error.message : 'Failed to resend verification email');
+      throw error;
     }
   };
 
-  const value: AuthContextType = {
-    user,
-    firebaseUser,
+  const sendPasswordResetEmail = async (email: string) => {
+    try {
+      setError(null);
+      await AuthService.sendPasswordResetEmail(email);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to send password reset email');
+      throw error;
+    }
+  };
+
+  const value = {
+    currentUser,
+    user: currentUser, // Alias for compatibility
+    loading,
+    isLoading: loading, // Alias for compatibility
+    error,
     login,
-    signup,
-    registerCustomer,
+    loginWithGoogle,
     logout,
+    register,
     updateProfile,
-    resetPassword,
-    isLoading,
-    isAuthenticated,
+    resendEmailVerification,
+    sendPasswordResetEmail
   };
 
   return (
     <AuthContext.Provider value={value}>
-      {children}
+      {!loading && children}
     </AuthContext.Provider>
   );
 };

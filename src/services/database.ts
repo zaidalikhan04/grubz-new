@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   getDoc,
@@ -149,10 +150,28 @@ export class UserService extends DatabaseService {
   static collectionName = 'users';
 
   static async createUser(userData: any) {
-    console.log('🔄 Creating user in Firestore:', userData);
-    const result = await this.create(this.collectionName, userData);
-    console.log('✅ User created in Firestore:', result);
-    return result;
+    console.log('🔄 Creating user in Firestore with specific ID:', userData);
+    try {
+      // Use setDoc with the user's Firebase Auth UID as the document ID
+      const userRef = doc(db, this.collectionName, userData.id);
+      const userDataWithDefaults = {
+        ...userData,
+        profilePhoto: userData.profilePhoto || '',
+        totalOrders: userData.totalOrders || 0,
+        favoriteRestaurants: userData.favoriteRestaurants || 0,
+        averageRating: userData.averageRating || 0,
+        moneySaved: userData.moneySaved || 0,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      };
+
+      await setDoc(userRef, userDataWithDefaults);
+      console.log('✅ User created in Firestore with ID:', userData.id);
+      return { id: userData.id, ...userDataWithDefaults };
+    } catch (error) {
+      console.error('❌ Error creating user in Firestore:', error);
+      throw error;
+    }
   }
 
   static async getUserById(id: string) {
@@ -170,15 +189,74 @@ export class UserService extends DatabaseService {
     return await this.update(this.collectionName, id, userData);
   }
 
+  static async updateUserRole(id: string, newRole: string, additionalData?: any) {
+    const updateData = {
+      role: newRole,
+      updatedAt: new Date(),
+      roleUpdatedAt: new Date(),
+      ...additionalData
+    };
+    console.log('🔄 Updating user role:', { id, newRole, additionalData });
+    const result = await this.update(this.collectionName, id, updateData);
+    console.log('✅ User role updated successfully');
+    return result;
+  }
+
   static async getAllUsers() {
     return await this.getAll(this.collectionName, [orderBy('createdAt', 'desc')]);
   }
 
   static async deleteUser(id: string) {
-    console.log('🔄 Deleting user from Firestore:', id);
-    const result = await this.delete(this.collectionName, id);
-    console.log('✅ User deleted from Firestore:', id);
-    return result;
+    console.log('🔄 Starting comprehensive user deletion for ID:', id);
+
+    try {
+      // First, get the user data to check if they exist and get their details
+      const userData = await this.getById(this.collectionName, id);
+      if (!userData) {
+        console.log('❌ User not found in Firestore:', id);
+        throw new Error('User not found in database');
+      }
+
+      console.log('📋 User found, proceeding with deletion:', userData.email);
+
+      // Delete user document from Firestore
+      const result = await this.delete(this.collectionName, id);
+      console.log('✅ User document deleted from Firestore:', id);
+
+      // Note: Deleting from Firebase Auth requires admin privileges
+      // This should ideally be done via a Cloud Function or Admin SDK
+      // For now, we're only deleting from Firestore
+      console.log('⚠️ Note: User still exists in Firebase Auth - requires server-side deletion');
+
+      return {
+        success: true,
+        deletedUser: userData,
+        message: 'User successfully deleted from Firestore database'
+      };
+    } catch (error: any) {
+      console.error('❌ Error during user deletion:', error);
+      throw new Error(`Failed to delete user: ${error.message}`);
+    }
+  }
+
+  // Admin-specific method to get user details before deletion
+  static async getUserForDeletion(id: string) {
+    try {
+      const userData = await this.getById(this.collectionName, id);
+      if (!userData) {
+        throw new Error('User not found');
+      }
+      return {
+        id: userData.id,
+        name: userData.name,
+        email: userData.email,
+        role: userData.role,
+        createdAt: userData.createdAt
+      };
+    } catch (error) {
+      console.error('❌ Error getting user for deletion:', error);
+      throw error;
+    }
   }
 }
 
